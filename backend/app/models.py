@@ -31,6 +31,6 @@ class Discovery(Base):
     discovered_at: Mapped[date_only] = mapped_column()
     created_at: Mapped[timestamp] = mapped_column(comment="作成日時")
     __table_args__ = (
-        Index("ix_discoveries_discovered_at", "discovered_at", "created_at")
+        Index("ix_discoveries_discovered_at", "discovered_at", "created_at"),
     )
 
