@@ -1,0 +1,527 @@
+# 「私の知識図鑑」MVP 実装前設計
+
+## このプロダクトの目的
+
+学んだことを**知識の貯蔵庫**として蓄積し、
+積み上がっていく様子を眺めることで**努力を可視化する（モチベーション向上）**。
+
+「勉強を続けること」自体が目的ではない。
+自分が少しずつ知識を積み上げている実感を得られる状態をつくることが目的である。
+
+この2つが、機能を足すか捨てるかを迷ったときの判断基準になる。
+
+> 判断の例: レア度を外したのは、AIが主観で付ける値では
+> 「貯蔵庫」にも「努力の可視化」にも寄与しないと判断したため。
+
+---
+
+対象範囲は要件書の「9. MVP完成条件」＋追加3機能（編集・削除・発見日指定）のみ。
+それ以外は原則すべて後回しとし、必要な箇所は「将来」と明示する。
+
+---
+
+## 0. スコープの確定（先に線を引く）
+
+MVPに **入れないもの** を明文化しておく。実装中に迷ったらここに戻る。
+
+| 項目 | MVP | 理由 |
+|---|---|---|
+| 登録・一覧・詳細 | ✅ 入れる | 完成条件そのもの |
+| 発見の**編集** | ✅ 入れる | 追加要件。AIの整理結果を自分で直せる |
+| 発見の**削除** | ✅ 入れる | 追加要件 |
+| **発見日の指定** | ✅ 入れる | 追加要件。昨日知ったことを今日登録できる |
+| 検索・カテゴリ絞り込み | ❌ 入れない | 件数が少ないうちは一覧で足りる |
+| **レア度** | ❌ 入れない | 判定基準が主観的で、AIに決めさせても意味のある値にならない |
+| ページネーション | ❌ 入れない | ただしAPIに `limit/offset` だけ用意（実装コスト0） |
+| 認証 | ❌ 入れない | 単一ユーザー前提 |
+| Docker / CI / IaC | ❌ 入れない | ローカル起動 + マネージドDBで足りる |
+
+追加した3機能も、ここまでで止める:
+
+- 編集で **LLM は再実行しない**（手で直すだけ。再整理は別機能）
+- **`raw_text` は編集不可**。元の入力は原本として残す
+- 削除は **物理削除**。ゴミ箱・復元は作らない
+- 日付は**指定できるだけ**。日付での検索・絞り込み・カレンダー表示は作らない
+
+**MVPの前提**: ローカル（`localhost`）で自分だけが動かす。公開デプロイはMVP完成後。
+
+---
+
+## 1. 責務分担（Next.js ↔ FastAPI）
+
+### 原則
+
+```
+ブラウザ ──> Next.js ──> FastAPI ──> LLM API
+                              └────> PostgreSQL
+```
+
+**Next.js（表示層）がやること**
+
+- 入力フォームの描画と入力値の保持
+- FastAPI への HTTP 呼び出し
+- カード一覧・詳細のレイアウト
+- ローディング / エラーの見せ方
+
+**Next.js が絶対にやらないこと**
+
+- LLM API を直接呼ぶ（APIキーがブラウザに露出する）
+- DB に直接つなぐ
+- 「どんなJSONが正しいか」の判断
+
+**FastAPI（ロジック層）がやること**
+
+- LLM へのプロンプト組み立てと呼び出し
+- LLM 出力の**検証**（Pydantic）と、壊れていた場合の処理
+- DB への保存・取得
+- カテゴリの正規化
+
+**判断基準**: 「壊れたデータが入ると困る処理」は全部 FastAPI 側。
+Next.js は FastAPI が返したものを信じて表示するだけ、という関係にする。
+
+### 通信経路の選択
+
+| 案 | 内容 | 判定 |
+|---|---|---|
+| A | ブラウザ → FastAPI に直接 fetch | ✅ **採用**。FastAPI に CORS 設定を1行足すだけ |
+| B | Next.js の Route Handler を挟む（BFF） | 将来。公開時にAPIキーや認証を隠す必要が出たら移行 |
+
+案Aの代償は「FastAPI の URL がブラウザから見える」こと。ローカル運用のMVPでは問題にならない。
+公開する時点で案Bに移る、と決めておく。
+
+### レンダリング方針（MVPのみ）
+
+| 画面 | 方式 | 理由 |
+|---|---|---|
+| 一覧 `/` | Server Component + `fetch(..., { cache: 'no-store' })` | サーバー間通信なのでCORS不要、コードが最短 |
+| 詳細 `/discoveries/[id]` | Server Component | 同上 |
+| 登録フォーム | Client Component (`'use client'`) | 入力状態とローディングが必要 |
+
+登録成功後は `router.push('/')` + `router.refresh()` で一覧に戻す。
+
+---
+
+## 2. API 設計
+
+ベースURL: `http://localhost:8000`
+
+### エンドポイント一覧（6本のみ）
+
+| メソッド | パス | 用途 |
+|---|---|---|
+| GET | `/health` | 起動確認 |
+| POST | `/api/discoveries` | 発見を登録（LLM整理＋保存） |
+| GET | `/api/discoveries` | 一覧取得（発見日の新しい順） |
+| GET | `/api/discoveries/{id}` | 詳細取得 |
+| PUT | `/api/discoveries/{id}` | 編集（LLMは呼ばない） |
+| DELETE | `/api/discoveries/{id}` | 削除 |
+
+### POST /api/discoveries
+
+リクエスト:
+
+```json
+{
+  "raw_text": "pandasのmergeはDataFrame同士を結合するときに使う",
+  "discovered_at": "2026-08-13"
+}
+```
+
+- `raw_text`: 1〜1000文字、必須
+- `discovered_at`: `YYYY-MM-DD`、**任意**。省略時は日本時間の今日
+
+レスポンス `201 Created`:
+
+```json
+{
+  "id": "0f8c3a1e-....",
+  "raw_text": "pandasのmergeはDataFrame同士を結合するときに使う",
+  "title": "pandas.merge",
+  "category": "プログラミング",
+  "summary": "2つのDataFrameを共通のキーで結合する関数。SQLのJOINに相当する。",
+  "tags": ["pandas", "Python", "データ処理"],
+  "discovered_at": "2026-08-13",
+  "created_at": "2026-08-14T21:30:00+09:00"
+}
+```
+
+**この API は同期処理**。LLM 応答待ちで 3〜10 秒かかる。
+非同期ジョブ化はMVP範囲外。フロントでローディング表示を出して耐える。
+
+### GET /api/discoveries
+
+クエリ: `limit`（既定50, 最大100）, `offset`（既定0）
+レスポンス: 上と同じオブジェクトの配列。
+並び順は **`discovered_at` 降順 → 同日なら `created_at` 降順**。
+
+### GET /api/discoveries/{id}
+
+存在しなければ `404`。
+
+### PUT /api/discoveries/{id}
+
+**全項目を送る**（部分更新の PATCH ではなく PUT）。
+
+```json
+{
+  "title": "pandas.merge",
+  "category": "プログラミング",
+  "summary": "2つのDataFrameを共通のキーで結合する関数。",
+  "tags": ["pandas", "Python"],
+  "discovered_at": "2026-08-13"
+}
+```
+
+- `raw_text` と `created_at` は**送らない・変更しない**
+- LLM は呼ばない
+- レスポンス `200`、更新後のオブジェクト全体
+- 存在しなければ `404`
+
+> **PUT を選んだ理由**: 編集画面は全項目が入力済みで表示されるので、
+> フォーム全体をそのまま送るのが一番素直。PATCH は「全項目 Optional」の
+> スキーマをもう1つ用意する必要があり、MVPでは割に合わない。
+
+### DELETE /api/discoveries/{id}
+
+- レスポンス `204 No Content`（body なし）
+- 存在しなければ `404`
+- 物理削除。復元不可
+
+### エラー仕様
+
+| コード | 状況 | body |
+|---|---|---|
+| 422 | 入力バリデーション失敗 | FastAPI 既定形式 |
+| 404 | ID が無い | `{"detail": "discovery not found"}` |
+| 502 | LLM 呼び出しが完全に失敗 | `{"detail": "AI processing failed"}` |
+
+---
+
+## 3. LLM 部分の設計（ここがこのアプリの心臓）
+
+### 出力スキーマ（Pydantic）
+
+```python
+class ExtractedDiscovery(BaseModel):
+    title: str            # 30文字以内
+    category: Category    # Enum
+    summary: str          # 120文字以内
+    tags: list[str]       # 1〜5個
+```
+
+`discovered_at` は **LLM の出力に含めない**。
+本文中の「昨日」「先週」といった表現を推測させると外れるうえ、検証もできない。
+日付はユーザーが画面で指定するものとして扱う。
+
+### カテゴリは必ず固定リストにする
+
+自由記述にすると `Python` / `python` / `Pythonライブラリ` と表記が揺れ、
+将来のコンプリート率・絞り込みが機能しなくなる。**最初から Enum で固定する。**
+
+初期案（あとから増やせる。減らすのは大変なので少なめに始める）:
+
+```
+プログラミング / データ・AI / インフラ・ツール / ビジネス
+健康・生活 / 言語・人文 / 科学 / その他
+```
+
+LLM がこの範囲外を返したら `その他` にフォールバックする。
+
+### 出力の受け取り方
+
+1. LLM を呼ぶ（`response_format` / JSON モードがあれば使う）
+2. `ExtractedDiscovery.model_validate_json()` で検証
+3. 失敗したら **1回だけリトライ**（「JSONのみを返せ」と付け足す）
+4. それでも失敗 → **フォールバック保存**
+
+フォールバック内容:
+
+```
+title    = raw_text の先頭30文字
+category = "その他"
+summary  = raw_text
+tags     = []
+```
+
+理由: 自分用の記録アプリでは「AIが失敗したので登録できませんでした」が最悪の体験になる。
+原文 `raw_text` は必ずDBに残すので、後から直せる。
+（`502` を返すのは、LLM API が落ちている等で呼び出し自体が失敗した場合のみ）
+
+---
+
+## 4. DB 設計
+
+テーブルは **1つだけ**。
+
+### `discoveries`
+
+| カラム | 型 | 制約 | 備考 |
+|---|---|---|---|
+| id | UUID | PK | Python 側で `uuid4()` 生成 |
+| raw_text | TEXT | NOT NULL | ユーザーの元入力。**絶対に消さない** |
+| title | VARCHAR(100) | NOT NULL | |
+| category | VARCHAR(50) | NOT NULL | Enum の値を文字列で保存 |
+| summary | TEXT | NOT NULL | |
+| tags | TEXT[] | NOT NULL, default '{}' | |
+| discovered_at | DATE | NOT NULL | **発見日**。ユーザーが指定・変更できる |
+| created_at | TIMESTAMPTZ | NOT NULL, default now() | レコード作成時刻。変更不可 |
+
+インデックス:
+
+```sql
+CREATE INDEX ix_discoveries_discovered_at
+  ON discoveries (discovered_at DESC, created_at DESC);
+```
+
+一覧の並び順がこれなので、これ1本だけ。他は不要。
+
+### 設計判断のトレードオフ
+
+**`tags` を配列カラムにした理由**
+
+| 案 | 長所 | 短所 |
+|---|---|---|
+| A. `TEXT[]` ✅採用 | テーブル1つで完結、実装が最短 | PostgreSQL 依存、タグ名の一括リネームが不可 |
+| B. `tags` + `discovery_tags` の正規化 | タグ集計・リネームが正しくできる | JOIN が要る、テーブル3つ、MVPには過剰 |
+| C. `JSONB` | 柔軟 | 配列に対する型の恩恵が薄い |
+
+将来「タグ別コンプリート率」を出す段階で B に移行する。移行時は `unnest(tags)` で移せる。
+
+**日付カラムを2本に分けた理由**
+
+| 案 | 内容 | 判定 |
+|---|---|---|
+| A. `created_at` を編集可能にする（1本） | カラムが増えない | ❌ いつ入力したかの記録が消える |
+| B. `discovered_at`(DATE) + `created_at`(TIMESTAMPTZ) ✅採用 | 意味が分かれる。図鑑に出すのは前者 | カラムが1本増えるだけ |
+
+「発見した日」と「システムに入れた日時」は別の概念。混ぜると、後から
+「まとめて10件入力した」ようなケースで履歴が壊れる。
+`discovered_at` を **DATE**（時刻なし）にしているのは、図鑑の表示に時刻が要らないため。
+タイムゾーンの厄介ごとも減る。
+
+**`category` を別テーブルにしない理由**: Enum で固定している以上、当面は文字列で十分。
+
+**DB本体**: Supabase の PostgreSQL を使うのが最短（ローカルに Postgres を立てる手間が消える）。
+Supabase の SDK やクライアントライブラリは使わず、**接続文字列だけもらって SQLAlchemy でつなぐ**。
+こうしておけば後で普通の Postgres に移せる。
+
+**マイグレーション**: Alembic を最初から入れる。テーブル1つでも、後で列を足すときに必ず要る。
+
+---
+
+## 5. ディレクトリ構成
+
+```
+discovery-zukan/
+├── backend/
+│   ├── app/
+│   │   ├── __init__.py
+│   │   ├── main.py            # FastAPI 本体・CORS・ルーター登録
+│   │   ├── config.py          # 環境変数の読み込み(pydantic-settings)
+│   │   ├── db.py              # engine, SessionLocal, get_db
+│   │   ├── models.py          # SQLAlchemy: Discovery
+│   │   ├── schemas.py         # Pydantic: 入出力 + ExtractedDiscovery
+│   │   ├── enums.py           # Category
+│   │   ├── routers/
+│   │   │   └── discoveries.py
+│   │   └── services/
+│   │       └── llm.py         # プロンプト + 呼び出し + 検証 + フォールバック
+│   ├── alembic/
+│   ├── alembic.ini
+│   ├── tests/
+│   │   └── test_llm.py
+│   ├── .env.example
+│   └── requirements.txt
+│
+└── frontend/
+    ├── src/
+    │   ├── app/
+    │   │   ├── layout.tsx
+    │   │   ├── page.tsx                         # 図鑑一覧
+    │   │   ├── new/page.tsx                     # 登録画面
+    │   │   └── discoveries/[id]/
+    │   │       ├── page.tsx                     # 詳細
+    │   │       └── edit/page.tsx                # 編集
+    │   ├── components/
+    │   │   ├── DiscoveryCard.tsx
+    │   │   ├── DiscoveryForm.tsx                # 'use client' 登録用
+    │   │   ├── DiscoveryEditForm.tsx            # 'use client' 編集用
+    │   │   └── DeleteButton.tsx                 # 'use client'
+    │   └── lib/
+    │       ├── api.ts                      # fetch ラッパ
+    │       └── types.ts                    # Discovery 型
+    ├── .env.local.example
+    └── package.json
+```
+
+### 意図的に作らなかったもの
+
+- **`repositories/` 層**: テーブル1つ・クエリ3本なので、ルーター内で SQLAlchemy を直接使う。
+  層を増やすほど「自分で説明できないコード」が増える。クエリが10本を超えたら切り出す。
+- **`services/` に llm.py 以外**: 現時点でビジネスロジックと呼べるのは LLM 整理だけ。
+
+### 環境変数
+
+`backend/.env`
+
+```
+DATABASE_URL=postgresql+psycopg://...
+LLM_API_KEY=...
+LLM_MODEL=...
+CORS_ORIGINS=http://localhost:3000
+```
+
+`frontend/.env.local`
+
+```
+NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
+```
+
+`.env` は必ず `.gitignore` に入れ、`.env.example` だけコミットする。
+
+---
+
+## 6. 実装順序
+
+**鉄則: LLM は後回し。** 先に「入れて出す」土台を完成させる。
+各ステップに「完了条件」を置く。それが見えるまで次に進まない。
+
+### Step 1 — FastAPI を起動する
+`main.py` に `/health` だけ作る。
+✅ 完了条件: ブラウザで `localhost:8000/health` が `{"status":"ok"}` を返す。
+
+### Step 2 — DB につないでテーブルを作る
+Supabase でプロジェクト作成 → `DATABASE_URL` 取得 → `models.py` → Alembic で `upgrade head`。
+✅ 完了条件: Supabase の画面に `discoveries` テーブルが空で見えている。
+
+### Step 3 — LLM 抜きで API 5本を作る
+`POST` は LLM を呼ばず、`title = raw_text[:30]`, `category = "その他"` を固定で入れて保存。
+`GET` 2本、`PUT`、`DELETE` もここで全部書く（どれも単純なSQLAlchemy操作）。
+✅ 完了条件: `/docs`（Swagger UI）から POST → GET → PUT → DELETE を順に叩き、
+それぞれ期待通りに変化する。日付を指定した POST が反映されることも確認する。
+**ここが一番大事なステップ。** API と DB の往復が動けば、残りは差し替えと画面だけになる。
+
+### Step 4 — LLM を単体で動かす
+`services/llm.py` を書き、FastAPI とは無関係に `python -m app.services.llm` 等で直接実行して試す。
+✅ 完了条件: ターミナルで文字列を渡すと、検証済みの `ExtractedDiscovery` が出力される。
+
+### Step 5 — LLM を POST に組み込む
+Step 3 の固定値部分を Step 4 の関数呼び出しに差し替える。フォールバック処理もここで入れる。
+✅ 完了条件: Swagger UI から雑な入力（例:「mergeわかった」）を投げて、整った JSON が返る。
+
+**ここでバックエンドは完成。以降フロントのみ。**
+
+### Step 6 — Next.js の一覧画面
+`create-next-app` → `lib/types.ts` に型定義 → `page.tsx`（Server Component）で `GET /api/discoveries`。
+`DiscoveryCard.tsx` でカード表示。
+✅ 完了条件: Step 5 で入れたデータがブラウザにカードで並ぶ。
+
+### Step 7 — 登録フォーム（日付入力つき）
+`DiscoveryForm.tsx`（Client Component）。FastAPI に CORS ミドルウェアを追加。
+
+- テキストエリア（`raw_text`）
+- `<input type="date">`（`discovered_at`）。**初期値はブラウザ側の今日の日付**を入れる
+- 送信中のローディング表示は必ず入れる（10秒待たされるため）
+
+✅ 完了条件: ブラウザのフォームから登録 → 一覧に増える。日付を昨日にすると昨日で保存される。
+
+### Step 8 — 詳細画面
+`discoveries/[id]/page.tsx`。カードを `<Link>` で包む。`raw_text` と発見日もここで表示する。
+✅ 完了条件: カードをクリックすると詳細が開く。
+
+### Step 9 — 編集画面
+`discoveries/[id]/edit/page.tsx`。Server Component で現在の値を取得し、
+`DiscoveryEditForm.tsx`（Client）に初期値として渡す。
+
+- 編集できる: `title` / `category`（select） / `summary` / `tags` / `discovered_at`（date）
+- 編集できない: `raw_text`（読み取り専用で表示するだけ）
+- 保存 → `PUT` → 詳細画面へ `router.push` + `router.refresh()`
+
+✅ 完了条件: AIが付けたタイトルを手で直して保存 → 一覧と詳細の両方に反映される。
+
+### Step 10 — 削除ボタン
+`DeleteButton.tsx`（Client）を詳細画面に置く。
+確認は `window.confirm()` で十分（モーダルUIはMVP範囲外）。
+削除 → `DELETE` → 一覧へ `router.push('/')` + `router.refresh()`。
+✅ 完了条件: 削除すると一覧からカードが消え、URL直打ちで開くと404になる。
+
+### Step 11 — 通しで数日使う
+自分で実際に毎日使い、破綻する箇所（カテゴリが足りない、summary が長すぎる、タグが多すぎる等）を記録する。
+✅ 完了条件: MVP完成条件 1〜10 がすべて満たされている。
+
+---
+
+## 7. AI に書かせてよい部分 / 自分で決めるべき部分
+
+| 領域 | 扱い |
+|---|---|
+| FastAPI の起動コード、CORS設定、Alembic 設定 | **自分でやる**。土台の仕組みを理解しないまま先に進むと後で必ず詰まる |
+| SQLAlchemy モデル、Pydantic スキーマの記述 | 定型。ただし**型と制約は自分で決める** |
+| Next.js のレイアウト、Tailwind のクラス | 生成でよい |
+| **カテゴリの分類体系** | 自分で決める。ここがプロダクトの骨格 |
+| **LLM プロンプトと出力スキーマ** | 自分で決める。ここが実装の中心 |
+| **LLM が失敗したときの挙動** | 自分で決める。UX に直結する |
+| **`tags` を配列にするか正規化するか** | 自分で判断する。上のトレードオフ表が根拠 |
+
+面接や説明の場で問われるのは下4行なので、この判断理由をメモに残しておくとそのまま使える。
+
+---
+
+## 8. MVP完成後、最初にやること（順序だけ）
+
+1. 数日使って溜まった不満のうち **1つだけ** 選んで直す
+2. カテゴリ絞り込み
+3. 公開デプロイ（この時点で認証と BFF 化が必要になる）
+
+要件書の「7. 将来的に追加したい機能」に手を出すのは、上の3つが済んでから。
+
+---
+
+## 9. アイデア置き場（MVP範囲外・未確定）
+
+思いついた案を捨てずに残す場所。**MVPには一切入れない。**
+判断基準は冒頭の目的2つ（知識の貯蔵庫 / 努力の可視化）に寄与するかどうか。
+
+### ① 達成したマスに好きな色を塗れる ★最有力
+
+「努力の可視化」に最も直結し、図鑑・コレクションらしさの核になる。
+
+未確定の論点:
+- 塗る対象は何か。**発見1件ごと**か、**カテゴリ×マスのグリッド**か
+- 色は自分で選ぶのか、カテゴリごとに固定なのか
+
+**先に決めるべきはUIの形**。データ設計はその後で決まる（`color VARCHAR(7)` を1本足すだけで済む可能性が高い）。
+先にカラムを足さないこと。
+
+### ② LLMからの励ましの言葉 ★条件つきで有効
+
+「モチベーション向上」に直結する。ただし設計を誤ると数日で無視される。
+
+- ❌ 悪い例: 登録のたびに「すごいですね！」→ 情報量ゼロですぐ読まれなくなる
+- ✅ 良い例: 蓄積を参照する（「Pythonの発見が10個になりました」「3日連続の記録です」）
+
+良い版は**LLMの仕事ではなく集計の仕事**。`discovered_at` と `category` を数えるSQLが本体で、
+LLMは数えた結果を文章にするだけ。**スキーマ変更は不要。**
+
+### ③ LLMのオンオフ切り替え
+
+「ただのメモとして使いたい人向け」という動機だが、目的2つのどちらにも寄与しない。
+むしろ要件書のUX方針（入力のハードルを極限まで下げる＝AIが補完する）と逆を向く。
+
+ただし別の理由で価値がある:
+
+- **コスト管理** — 個人利用でもLLM呼び出しは課金される
+- **障害時の継続利用** — API停止・クォータ切れでも記録は続けられる
+
+この2つが本当の動機なら、新機能を作るのではなく
+**既存のフォールバック処理（3章）を手動でも呼べるようにする**だけで足りる。
+実装コストはほぼゼロになる。
+
+### 優先順位（現時点の見立て）
+
+```
+① 色塗り  >  ② 励まし（集計版）  >  ③ LLMオンオフ
+```
+
+いずれも **MVPの11ステップが全部完了してから** 着手する。
+今この3つのためにカラムを足したりコードを分岐させたりしない。
