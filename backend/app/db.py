@@ -1,7 +1,7 @@
 from sqlalchemy import create_engine
 from dotenv import load_dotenv
 import os    
-from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
 load_dotenv()
 
@@ -19,3 +19,12 @@ engine = create_engine(
 )
 # Base.metadata.create_all(engine) tableを作る際に必要
 # 今回はAlembic initを使用するため、使わない
+
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+def session_factory():
+    session = SessionLocal()
+    try:
+        yield session
+    finally:
+        session.close()
