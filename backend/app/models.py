@@ -5,7 +5,6 @@ from datetime import datetime, date
 import uuid
 from app.db import Base
 
-
 # 型の作成 Annotated
 # 本来はテーブル数の多い時に使用すると便利
 uuid_pk = Annotated[uuid.UUID, mapped_column(

@@ -15,14 +15,14 @@ class Base(DeclarativeBase):
 
 engine = create_engine(
     DATABASE_URL,
-    echo=True
+    echo=False
 )
 # Base.metadata.create_all(engine) tableを作る際に必要
 # 今回はAlembic initを使用するため、使わない
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-def session_factory():
+def get_db():
     session = SessionLocal()
     try:
         yield session
