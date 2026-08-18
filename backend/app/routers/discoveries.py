@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, HTTPException
 from datetime import date
 from app.schemas import DiscoveryCreate, DiscoveryResponse 
 from app.models import Discovery
@@ -6,6 +6,7 @@ from app.db import get_db
 from sqlalchemy.orm import Session
 from sqlalchemy import select
 from typing import Annotated
+import uuid
 
 router = APIRouter(
     prefix = "/api/discoveries",
@@ -41,8 +42,19 @@ def create_discovery(payload: DiscoveryCreate, db: Session = Depends(get_db)):
     db.refresh(discovery)
     return discovery
 
+# get一覧
 @router.get("", response_model=list[DiscoveryResponse])
 def list_discovery(limit: Annotated[int, Query(ge=1, le=100)] = 50, offset: Annotated[int, Query(ge=0)] = 0, db: Session = Depends(get_db)):
     stmt = select(Discovery).order_by(Discovery.discovered_at.desc(), Discovery.created_at.desc()).limit(limit).offset(offset)
     db_list = db.execute(stmt).scalars().all()
     return db_list
+
+# get詳細
+@router.get("/{discovery_id}", response_model=DiscoveryResponse)
+def detail_discovery(discovery_id: uuid.UUID, db: Session = Depends(get_db)):
+    discovery = db.get(Discovery, discovery_id)
+    if discovery is None:
+        raise HTTPException(status_code=404, detail="discovery not found")
+    return discovery
+
+

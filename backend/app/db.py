@@ -15,7 +15,7 @@ class Base(DeclarativeBase):
 
 engine = create_engine(
     DATABASE_URL,
-    echo=False
+    echo=True
 )
 # Base.metadata.create_all(engine) tableを作る際に必要
 # 今回はAlembic initを使用するため、使わない
