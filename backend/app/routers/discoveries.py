@@ -1,9 +1,11 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from datetime import date
 from app.schemas import DiscoveryCreate, DiscoveryResponse 
 from app.models import Discovery
 from app.db import get_db
 from sqlalchemy.orm import Session
+from sqlalchemy import select
+from typing import Annotated
 
 router = APIRouter(
     prefix = "/api/discoveries",
@@ -40,5 +42,7 @@ def create_discovery(payload: DiscoveryCreate, db: Session = Depends(get_db)):
     return discovery
 
 @router.get("", response_model=list[DiscoveryResponse])
-def list_discovery(db: Session = Depends(get_db)):
-    db.execute()
+def list_discovery(limit: Annotated[int, Query(ge=1, le=100)] = 50, offset: Annotated[int, Query(ge=0)] = 0, db: Session = Depends(get_db)):
+    stmt = select(Discovery).order_by(Discovery.discovered_at.desc(), Discovery.created_at.desc()).limit(limit).offset(offset)
+    db_list = db.execute(stmt).scalars().all()
+    return db_list
