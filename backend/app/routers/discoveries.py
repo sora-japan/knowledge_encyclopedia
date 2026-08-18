@@ -1,12 +1,13 @@
 from fastapi import APIRouter, Depends, Query, HTTPException
 from datetime import date
-from app.schemas import DiscoveryCreate, DiscoveryResponse 
+from app.schemas import DiscoveryCreate, DiscoveryResponse, DiscoveryUpdate 
 from app.models import Discovery
 from app.db import get_db
 from sqlalchemy.orm import Session
 from sqlalchemy import select
 from typing import Annotated
 import uuid
+from app.enums import Category
 
 router = APIRouter(
     prefix = "/api/discoveries",
@@ -34,7 +35,7 @@ def create_discovery(payload: DiscoveryCreate, db: Session = Depends(get_db)):
         raw_text=payload.raw_text, 
         title=title, 
         discovered_at=discovered_at, 
-        category="その他", 
+        category=Category.OTHER, 
         summary=payload.raw_text, tags=[]
     )
     db.add(discovery)
@@ -57,6 +58,7 @@ def detail_discovery(discovery_id: uuid.UUID, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="discovery not found")
     return discovery
 
+# db: Annotated[Session, Depends(get_db)]とdb: Session = Depends(get_db)は同じ意味になる。学習のため、2つを使用
 @router.put("/{discovery_id}", response_model=DiscoveryResponse)
 def update_discovery(discovery_id: uuid.UUID, payload: DiscoveryUpdate, db: Annotated[Session, Depends(get_db)]):
     discovery = db.get(Discovery, discovery_id)
@@ -70,3 +72,11 @@ def update_discovery(discovery_id: uuid.UUID, payload: DiscoveryUpdate, db: Anno
     db.commit()
     db.refresh(discovery)
     return discovery
+
+@router.delete("/{discovery_id}", status_code=204)
+def delete_discovery(discovery_id: uuid.UUID, db: Annotated[Session, Depends(get_db)]):
+    discovery = db.get(Discovery, discovery_id)
+    if discovery is None:
+        raise HTTPException(status_code=404, detail="discovery not found")
+    db.delete(discovery)
+    db.commit()
