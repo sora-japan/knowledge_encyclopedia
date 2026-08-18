@@ -57,4 +57,16 @@ def detail_discovery(discovery_id: uuid.UUID, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="discovery not found")
     return discovery
 
-
+@router.put("/{discovery_id}", response_model=DiscoveryResponse)
+def update_discovery(discovery_id: uuid.UUID, payload: DiscoveryUpdate, db: Annotated[Session, Depends(get_db)]):
+    discovery = db.get(Discovery, discovery_id)
+    if discovery is None:
+        raise HTTPException(status_code=404, detail="discovery not found")
+    discovery.title = payload.title
+    discovery.category = payload.category
+    discovery.summary = payload.summary
+    discovery.tags = payload.tags
+    discovery.discovered_at = payload.discovered_at
+    db.commit()
+    db.refresh(discovery)
+    return discovery
