@@ -8,6 +8,7 @@ from sqlalchemy import select
 from typing import Annotated
 import uuid
 from app.enums import Category
+from app.services.llm import analyze_text_with_llm
 
 router = APIRouter(
     prefix = "/api/discoveries",
@@ -21,22 +22,20 @@ router = APIRouter(
 def create_discovery(payload: DiscoveryCreate, db: Session = Depends(get_db)):
     """
     発見を1件登録する。
-    raw_text から title/category/summary/tags を生成して保存する。
-    現在はLLM未実装のため固定値を使用（Step 5 で差し替え）。
-    discovered_at が未指定の場合は当日の日付を入れる。
     """
     if payload.discovered_at is None:
         today = date.today()
         discovered_at = today
     else:
         discovered_at = payload.discovered_at
-    title = payload.raw_text[:30]
+    ai_result = analyze_text_with_llm(payload.raw_text)
     discovery = Discovery(
         raw_text=payload.raw_text, 
-        title=title, 
-        discovered_at=discovered_at, 
-        category=Category.OTHER, 
-        summary=payload.raw_text, tags=[]
+        title=ai_result.title, 
+        category=ai_result.category,
+        summary=ai_result.summary,
+        tags=ai_result.tags,
+        discovered_at=discovered_at 
     )
     db.add(discovery)
     db.commit()
