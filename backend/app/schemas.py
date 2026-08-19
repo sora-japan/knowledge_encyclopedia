@@ -25,3 +25,9 @@ class DiscoveryResponse(BaseModel):
     discovered_at: date
     created_at: datetime
 
+class ExtractedDiscovery(BaseModel):
+    title: str = Field(min_length = 1, max_length = 30)
+    category: Category
+    summary: str = Field(min_length = 1, max_length = 120)
+    tags: list[str] = Field(min_length = 0, max_length = 5)
+
