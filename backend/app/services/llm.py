@@ -1,6 +1,5 @@
-from dotenv import load_dotenv
+from app.config import settings
 from google import genai
-import os
 from app.schemas import ExtractedDiscovery
 from pydantic import ValidationError
 from app.enums import Category
@@ -8,11 +7,7 @@ from logging import getLogger
 from google.genai._gaos.lib.compat_errors import APIError as InteractionsAPIError
 # Interactions API の例外階層が公開されたか → 公開されていれば import を差し替え
 
-load_dotenv()
-
-LLM_MODEL = os.getenv('LLM_MODEL')
-
-client = genai.Client()
+client = genai.Client(api_key=settings.GEMINI_API_KEY)
 
 logger = getLogger(__name__)
 
@@ -30,7 +25,7 @@ def analyze_text_with_llm(raw_text: str) -> ExtractedDiscovery:
     for _ in range(2):
         try:
             interaction = client.interactions.create(
-                model=LLM_MODEL,
+                model=settings.LLM_MODEL,
                 input=prompt,
                 response_format={
                     "type": "text",
@@ -53,12 +48,13 @@ def analyze_text_with_llm(raw_text: str) -> ExtractedDiscovery:
         tags=[]
     )
 
-if __name__ == "__main__":
-    tests = [
-        "pandasのmergeはDataFrame同士を結合するときに使う",
-        "mergeわかった",
-        "今日は肩甲骨を寄せる意識で投げたらグルーピングが良くなった",
-    ]
-    for t in tests:
-        print(f"\n--- 入力: {t}")
-        print(analyze_text_with_llm(t))
+# 開発用: プロンプト調整時に python -m app.services.llm で実行
+# if __name__ == "__main__":
+#     tests = [
+#         "pandasのmergeはDataFrame同士を結合するときに使う",
+#         "mergeわかった",
+#         "今日は肩甲骨を寄せる意識で投げたらグルーピングが良くなった",
+#     ]
+#     for t in tests:
+#         print(f"\n--- 入力: {t}")
+#         print(analyze_text_with_llm(t))
