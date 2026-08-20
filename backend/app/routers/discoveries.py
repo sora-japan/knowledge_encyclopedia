@@ -1,14 +1,15 @@
-from fastapi import APIRouter, Depends, Query, HTTPException
-from datetime import date
+from fastapi import APIRouter, Depends, Query, HTTPException, Response
 from app.schemas import DiscoveryCreate, DiscoveryResponse, DiscoveryUpdate 
 from app.models import Discovery
 from app.db import get_db
 from sqlalchemy.orm import Session
-from sqlalchemy import select
+from sqlalchemy import select, func
 from typing import Annotated
 import uuid
-from app.enums import Category
 from app.services.llm import analyze_text_with_llm
+from zoneinfo import ZoneInfo
+from datetime import datetime
+from app.config import settings
 
 router = APIRouter(
     prefix = "/api/discoveries",
@@ -19,13 +20,18 @@ router = APIRouter(
 # データを送信したい時、post
 # ユーザーから２項目受け取り、８項目返す
 @router.post("", response_model=DiscoveryResponse, status_code=201)
-def create_discovery(payload: DiscoveryCreate, db: Session = Depends(get_db)):
+def create_discovery(payload: DiscoveryCreate,response: Response, db: Session = Depends(get_db)):
     """
     発見を1件登録する。
     """
+    dt = datetime.now(ZoneInfo("Asia/Tokyo"))
+    today_zerotime = dt.replace(hour=0, minute=0, second=0, microsecond=0)
+    stmt = select(func.count()).select_from(Discovery).where(Discovery.created_at >= today_zerotime)
+    count = db.execute(stmt).scalar()
+    if count >= settings.DAILY_LIMIT:
+        raise HTTPException(status_code=429, detail="1日の登録上限に達しました")
     if payload.discovered_at is None:
-        today = date.today()
-        discovered_at = today
+        discovered_at = dt.date()
     else:
         discovered_at = payload.discovered_at
     ai_result = analyze_text_with_llm(payload.raw_text)
@@ -40,6 +46,7 @@ def create_discovery(payload: DiscoveryCreate, db: Session = Depends(get_db)):
     db.add(discovery)
     db.commit()
     db.refresh(discovery)
+    response.headers["X-Daily-Remaining"] = str(settings.DAILY_LIMIT - (count + 1))
     return discovery
 
 # get一覧
