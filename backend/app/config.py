@@ -5,6 +5,7 @@ class Settings(BaseSettings):
     GEMINI_API_KEY: str
     LLM_MODEL: str
     DAILY_LIMIT: int = 30
+    CORS_ORIGINS: str = "http://localhost:3000"
 
     model_config = SettingsConfigDict(env_file=".env")
 
