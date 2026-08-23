@@ -1,4 +1,4 @@
-import { DiscoveryResponse } from "@/lib/types";
+import { DiscoveryResponse, DiscoveryCreate } from "@/lib/types";
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL
 
@@ -12,5 +12,29 @@ export async function fetchDiscoveries(): Promise<DiscoveryResponse[]> {
   if (!response.ok){
     throw new Error(`一覧の取得に失敗しました: ${response.status}`);
   }
+  return response.json();
+}
+
+export async function createDiscovery(
+  payload: DiscoveryCreate
+): Promise<DiscoveryResponse>{
+  if (!BASE_URL){
+    throw new Error("NEXT_PUBLIC_API_BASE_URL が設定されていません");
+  }
+
+  const response = await fetch(`${BASE_URL}/api/discoveries`, {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify(payload),
+  });
+
+  if (response.status === 429){
+    throw new Error("本日の登録上限に達しました");
+  }
+
+  if (!response.ok){
+    throw new Error (`登録に失敗しました: ${response.status}`);
+  }
+
   return response.json();
 }

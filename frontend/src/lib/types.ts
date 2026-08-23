@@ -10,3 +10,8 @@ export interface DiscoveryResponse{
   discovered_at: string; 
   created_at: string;
 }
+
+export interface DiscoveryCreate {
+  raw_text: string;
+  discovered_at?: string;
+}
