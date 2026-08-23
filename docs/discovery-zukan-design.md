@@ -576,3 +576,241 @@ MVPでは唯一のユーザーが開発者自身なので、ターミナルに�
 title   = raw_text[:30]
 summary = raw_text[:120]   ← 切り詰め必須
 ```
+
+---
+
+# 🚨 11. 公開デプロイ前の必須ゲート（これを飛ばすと課金事故が起きる）
+
+> **このセクションは「やったほうがいい」ではなく「やらないと公開してはいけない」。**
+>
+> ⚠️ **レート制限だけは Step 6 の直前に実装する。**
+> 理由: Step 6〜10 でフロントを書く間に `useEffect` の無限リクエストを踏むリスクが現実化する。
+> 対策をMVP完成後に置くと、**事故った後に対策を入れる**ことになる。
+
+## なぜ危険か
+
+`POST /api/discoveries` は **1リクエスト = LLM 1回呼び出し**。
+認証もレート制限もない状態で公開すると、URLを知った誰か（またはボット）が
+ループで叩くだけで無料枠を使い切り、有料に切り替えていれば青天井で課金される。
+
+**攻撃者でなくてもよい。** フロントのバグによるリトライ暴走でも同じことが起きる。
+
+## 公開前チェックリスト
+
+- [ ] **Google Cloud 側で予算アラート/上限を設定**（最後の防波堤。無料枠のみでも設定しておく）
+- [ ] **レート制限を入れる**（下記のいずれか）
+- [ ] **認証を入れる**（単一ユーザーなら簡易なもので十分）
+- [ ] BFF 化して FastAPI の URL を直接露出させない（1章の案B）
+- [ ] `POST` だけは特に厳しく制限する（GET は DB 読むだけなので安い）
+
+## レート制限の実装（3案）
+
+| 案 | 実装難易度 | 向く場面 |
+|---|---|---|
+| A. `slowapi`（FastAPIライブラリ） | **★☆☆ 30分** | 単一インスタンス。MVP後の最初の一手 |
+| B. 外部ストア（Upstash Redis 等） | ★★☆ 半日 | 複数インスタンス、永続カウンタが要る場合 |
+| C. Cloudflare 等の手前で弾く | ★★☆ 半日 | アプリに到達させたくない場合 |
+
+**A が最短。** デコレータ1行で `@limiter.limit("10/minute")` のように書ける。
+インメモリなのでプロセス再起動でリセットされるが、個人利用なら十分。
+
+## 個人利用でも入れる価値はあるか
+
+**ある。** 理由は攻撃対策ではなく **自分のミス対策**。
+
+- フロントの `useEffect` の書き方を間違えて無限リクエスト
+- リトライ処理のバグでループ
+- 動作確認中に連打
+
+いずれも「気づいたら無料枠が消えている」につながる。
+案Aなら30分程度。**Step 5 の仕上げが終わったら、Step 6 に入る前に実装する。**
+
+```
+Step 5 仕上げ（例外処理・ログ）
+    ↓
+レート制限（slowapi、30分）   ← ここ
+    ↓
+Step 6 Next.js 一覧画面
+```
+
+`POST` だけ制限すれば、LLM課金という最もコストの大きい部分を守れる。
+認証・BFF化・予算アラートは従来どおり公開デプロイ時でよい。
+
+**注意**: `slowapi` はエンドポイント関数の引数に `request: Request` があることを要求する。
+現在の5本には無いので追加が必要。
+
+---
+
+# 12. LLM API 選定の記録（ADR相当）
+
+## 決定
+
+**Gemini の Interactions API（`client.interactions.create`）を使う。**
+モデルは `gemini-3.1-flash-lite`（GA版、無料枠あり）。
+
+## 経緯と根拠
+
+| 選択肢 | 状態（2026-08時点） |
+|---|---|
+| **Interactions API** ✅採用 | 2026-06-22 GA。AI Studio・公式ドキュメントの既定。**全新規プロジェクトで推奨** |
+| generateContent | ドキュメント上 **「Legacy」** と明記。ただし「引き続き完全にサポート」 |
+
+一度 generateContent への切り替えを検討したが、**Legacy 扱いのAPIを新規に採用する理由がない**ため撤回した。
+
+## 既知の問題点（許容した上で採用）
+
+**例外階層が公開されていない。**
+
+`client.interactions.create()` が投げる例外は `google.genai._gaos.*`（アンダースコア = 内部モジュール）にあり、
+公開されている `genai.errors.APIError` では**捕まえられない**（実測確認済み）。
+
+```python
+# 内部モジュールからの import。将来公開されたらこの行だけ差し替える
+from google.genai._gaos.lib.compat_errors import APIError as InteractionsAPIError
+```
+
+この1つで通信断（`APIConnectionError`）から `RateLimitError` / `InternalServerError` まで
+すべて捕捉できる（継承関係を実測で確認）。`httpx.HTTPError` の捕捉は不要。
+
+**なぜ内部モジュール依存を許容したか**: 未公開なのは新しいAPIの整備途上によるもので、
+API自体の欠陥ではない。公開されたら import 1行の変更で済む。
+
+## ⚠️ 10月（就活期）までに再確認すること
+
+### 判定スクリプト（これをコピペして1回実行する）
+
+`dir(errors)` で名前を眺めるだけでは判定できない。
+**名前があること ≠ 捕まえられること**（`APIError` は今も存在するが interactions には効かない）。
+実際に例外を起こして、公開例外の子孫かどうかを直接確かめる。
+
+```python
+from google import genai
+from google.genai import errors
+
+client = genai.Client()
+try:
+    client.interactions.create(model="does-not-exist", input="test")
+except errors.APIError:
+    print("✅ 公開例外で捕まった → import を差し替え可能")
+except Exception as e:
+    print("❌ まだ捕まらない:", type(e).__module__ + "." + type(e).__name__)
+```
+
+- `✅` → `llm.py` の import を `from google.genai import errors` に差し替え、`errors.APIError` を使う
+- `❌` → 表示されたパスが**現在の正しい import 先**。`_gaos` の構造が変わっていてもここで分かる
+
+**限界**: ネットワークが必要（オフラインだと `APIConnectionError` が出て紛らわしい）。
+404以外の経路（`RateLimitError` 等）が同じ階層のままかは1回では分からないが、
+実測上すべて同じ基底の子孫なので、404が移れば他も移っている可能性が高い。
+
+### チェック項目
+
+- [ ] 上の判定スクリプトを実行し、例外階層が公開されたか確認
+- [ ] 破壊的変更の有無（2026年5月に `outputs` → `steps` のスキーマ変更実績あり）
+- [ ] 日本語ドキュメントに「ベータ版・破壊的変更の対象」との記述が残っており、GA告知と矛盾している。最新の状態を確認する
+- [ ] `gemini-3.1-flash-lite` が廃止告知を受けていないか（2.5系は 2026-10-16 に廃止予定）
+
+**採用面接で説明できる形にしておく**: 「新しいAPIを選び、その代償として内部モジュールに依存した。
+理由と、公開されたときの移行コストを把握した上での判断」という説明ができれば、
+技術選定の思考プロセスを示す材料になる。
+
+## SDK を1ファイルに閉じ込める方針
+
+`app/services/llm.py` の外にSDKを漏らさない。外部に見せるのは以下だけ。
+
+```
+analyze_text_with_llm(raw_text: str) -> ExtractedDiscovery
+```
+
+これによりプロバイダ変更（OpenAI等）は**1ファイルの書き換えで完了**する。
+`DATABASE_URL` を差し替えれば別のDBに移れるのと同じ構造。
+
+---
+
+# 13. フロントエンド環境構築の記録（Step 6 準備）
+
+## 実行コマンド
+
+```
+cd frontend
+npx create-next-app@latest    # プロジェクト名に「.」を指定
+```
+
+`@latest` を付けたのは、`npx` がローカルキャッシュを優先するため。
+省略すると**以前ダウンロードした古い版で作られる**可能性がある。
+
+プロジェクト名に `.` を指定すると、新しいディレクトリを作らず
+既存の `frontend/` 直下に展開される。
+
+## 前提の確認
+
+| 項目 | 実測値 | 要件 |
+|---|---|---|
+| Node.js | v24.14.0 | 20.9 以上（Next.js 16） |
+| npm | 11.9.0 | — |
+
+**Node.js に仮想環境は不要。** `npm install` は実行ディレクトリの
+`node_modules/` に入れるため、最初から隔離されている。
+Python の venv に相当するステップは存在しない。
+
+| Python | Node.js |
+|---|---|
+| venv（隔離） | 不要（`node_modules/` が隔離） |
+| pyenv / nvm | nvm |
+| pip | npm |
+| requirements.txt | package.json |
+
+## 選択した設定と理由
+
+| 項目 | 選択 | 理由 |
+|---|---|---|
+| **TypeScript** | Yes | 型で守る方針。Pydanticで書いてきた発想がそのまま効く |
+| **ESLint**（vs Biome） | ESLint | **Biome には `eslint-config-next` 相当が無い**。`no-html-link-for-pages`、key抜けなど**Next.js固有のミスを検出できる**。見た目を生成AIに任せる方針なので、AIが出しがちなミスを機械的に拾える価値が大きい。速度はBiomeが10〜100倍速いが、数十ファイルの規模では体感差なし |
+| **React Compiler** | No | 公式が「ビルド性能データ収集中のため既定では無効」と明言。Babel依存でコンパイルが遅くなる。カード一覧とフォームだけの規模では最適化対象がない。必要になれば `next.config` に1行で有効化できる |
+| **Tailwind CSS** | Yes | **生成AIとの相性**。クラスがHTML内に完結するので、返ってきたコードをそのまま貼れる。別ファイルのCSSと対応を取る必要がない |
+| **`src/` ディレクトリ** | Yes | `backend/app/` と対称になる。「設定はルート、コードは1階層下」でリポジトリ全体が揃う。機能差はゼロ（公式も「任意」と明記）で、純粋に整理の問題 |
+| **App Router** | Yes | 設計書のディレクトリ構成が App Router 前提。フォルダ構造がそのままURLになる。Server Component も Pages Router では使えない |
+| **import alias** | `@/*`（既定） | `@` が `src/` を指す。ファイルを移動しても import を直さずに済む。バックエンドで `from app.db import` に揃えたのと同じ発想 |
+| **AGENTS.md** | Yes | **Next.js 16 は15系から破壊的変更が多く、生成AIは古い書き方を出しがち**。このファイルがあるとAIが `node_modules/next/dist/docs/` の実バージョンのドキュメントを参照する |
+
+## `.gitignore` の方針
+
+**ルートと `frontend/` で分ける。**
+
+以前「1箇所に集約」としたが、Python固有（`__pycache__`、`.venv`）と
+Node固有（`node_modules`、`.next`）は内容が全く違うため、
+**技術スタックごとに分けたほうが読みやすい**。
+
+`create-next-app` が生成した `frontend/.gitignore` をそのまま使う。
+
+## 生成された構成
+
+```
+frontend/
+├── src/
+│   └── app/          ← ここにコードを書く
+├── public/
+├── node_modules/     ← 隔離されたパッケージ群
+├── package.json      ← requirements.txt に相当
+├── tsconfig.json
+├── next.config.ts
+├── eslint.config.mjs
+├── AGENTS.md         ← 生成AI向けの指示
+├── CLAUDE.md         ← AGENTS.md を参照するだけ
+└── .gitignore
+```
+
+## 次にやること（自分で書く範囲）
+
+設計書 第7章の線引きに従い、**バックエンドとの接続点は自分で書く**。
+
+1. `src/lib/types.ts` — `DiscoveryResponse` の8項目をTS型に
+   - 論点: JSON経由で `UUID` / `date` / `datetime` が何型になるか
+   - 論点: `Category` Enum をTSでどう表現するか
+   - 論点: `interface` と `type` の使い分け
+2. `src/lib/api.ts` — fetch ラッパ。`cache: 'no-store'` の判断
+3. 一覧ページで**まず生データを表示**（`JSON.stringify`）
+4. カード表示（ここから生成AIに任せてよい）
+
+3 を挟むのは、Step 3 で「LLM抜きで器を作る」としたのと同じ発想。
+**見た目を作る前に通信が通ることを確認**する。
