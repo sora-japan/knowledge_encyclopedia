@@ -2,6 +2,12 @@ import { DiscoveryResponse, DiscoveryCreate } from "@/lib/types";
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL
 
+/**
+ * 存在しないIDを引いたときのエラー。
+ * 通信エラーと区別して notFound() を出すために型で分けている。
+ */
+export class DiscoveryNotFoundError extends Error {}
+
 export async function fetchDiscoveries(): Promise<DiscoveryResponse[]> {
   if (!BASE_URL){
     throw new Error("NEXT_PUBLIC_API_BASE_URL が設定されていません");
@@ -49,7 +55,7 @@ export async function fetchDiscoveryById(id: string): Promise<DiscoveryResponse>
   });
 
   if (response.status === 404){
-    throw new Error("この発見は見つかりませんでした");
+    throw new DiscoveryNotFoundError("この発見は見つかりませんでした");
   }
 
   if (!response.ok){
