@@ -38,3 +38,23 @@ export async function createDiscovery(
 
   return response.json();
 }
+
+export async function fetchDiscoveryById(id: string): Promise<DiscoveryResponse>{
+  if (!BASE_URL){
+    throw new Error("NEXT_PUBLIC_API_BASE_URL が設定されていません");
+  }
+
+  const response = await fetch(`${BASE_URL}/api/discoveries/${id}`, {
+    cache: "no-store",
+  });
+
+  if (response.status === 404){
+    throw new Error("この発見は見つかりませんでした");
+  }
+
+  if (!response.ok){
+    throw new Error (`取得に失敗しました: ${response.status}`);
+  }
+
+  return response.json();
+}
