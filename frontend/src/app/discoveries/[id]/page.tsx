@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { DiscoveryNotFoundError, fetchDiscoveryById } from "@/lib/api";
 import { DiscoveryResponse } from "@/lib/types";
 import { categoryStyle } from "@/lib/categoryStyle";
+import DeleteButton from "@/components/DeleteButton";
 
 /**
  * ISO 形式の日付文字列を 2025/05/18 の形に整える。
@@ -103,6 +104,11 @@ export default async function DiscoveryDetailPage({ params }: Props) {
             </p>
           </section>
         </article>
+
+        {/* 削除はヘッダーの「編集」と間違えて押さないよう、本文を読み終えた末尾に置く */}
+        <div className="mt-6 flex justify-end">
+          <DeleteButton id={id} title={discovery.title} />
+        </div>
       </main>
     </div>
   );
