@@ -54,3 +54,6 @@ export const CATEGORY_STYLES: Record<Category, CategoryStyle> = {
 export function categoryStyle(category: Category): CategoryStyle {
   return CATEGORY_STYLES[category] ?? CATEGORY_STYLES["その他"];
 }
+
+/** セレクトボックスの選択肢用。CATEGORY_STYLES のキーが8分類の正 */
+export const CATEGORIES = Object.keys(CATEGORY_STYLES) as Category[];

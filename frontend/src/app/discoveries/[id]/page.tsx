@@ -39,13 +39,19 @@ export default async function DiscoveryDetailPage({ params }: Props) {
   return (
     <div className="flex flex-1 flex-col bg-zinc-50 dark:bg-zinc-950">
       <header className="border-b border-black/[.06] bg-white dark:border-white/10 dark:bg-zinc-900">
-        <div className="mx-auto flex max-w-3xl items-center px-6 py-4">
+        <div className="mx-auto flex max-w-3xl items-center justify-between px-6 py-4">
           <Link
             href="/"
             className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-sm font-medium text-zinc-600 transition hover:bg-zinc-100 hover:text-zinc-900 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:text-zinc-400 dark:hover:bg-white/[.06] dark:hover:text-zinc-50"
           >
             <span aria-hidden="true">←</span>
             図鑑に戻る
+          </Link>
+          <Link
+            href={`/discoveries/${id}/edit`}
+            className="inline-flex items-center rounded-lg px-2 py-1 text-sm font-medium text-zinc-600 transition hover:bg-zinc-100 hover:text-zinc-900 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:text-zinc-400 dark:hover:bg-white/[.06] dark:hover:text-zinc-50"
+          >
+            編集
           </Link>
         </div>
       </header>

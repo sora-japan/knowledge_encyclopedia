@@ -89,3 +89,21 @@ export async function updateDiscovery(
 
   return response.json();
 }
+
+export async function deleteDiscovery(id: string): Promise<void>{
+  if (!BASE_URL){
+    throw new Error("NEXT_PUBLIC_API_BASE_URL が設定されていません");
+  }
+
+  const response = await fetch(`${BASE_URL}/api/discoveries/${id}`, {
+    method: "DELETE",
+  });
+
+  if (response.status === 404){
+    throw new DiscoveryNotFoundError("この発見は見つかりませんでした");
+  }
+
+  if (!response.ok){
+    throw new Error(`削除に失敗しました: ${response.status}`);
+  }
+}
