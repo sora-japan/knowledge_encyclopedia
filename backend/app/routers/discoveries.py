@@ -10,7 +10,7 @@ from app.services.llm import analyze_text_with_llm
 from zoneinfo import ZoneInfo
 from datetime import datetime
 from app.config import settings
-from app.services.rag import build_text, embed
+from app.services.rag.embeddings import build_text, embed
 
 router = APIRouter(
     prefix = "/api/discoveries",
@@ -22,8 +22,22 @@ router = APIRouter(
 # ユーザーから２項目受け取り、８項目返す
 @router.post("", response_model=DiscoveryResponse, status_code=201)
 def create_discovery(payload: DiscoveryCreate,response: Response, db: Session = Depends(get_db)):
-    """
-    発見を1件登録する。
+    """発見を1件登録する。
+
+    raw_text を LLM に渡して title/category/summary/tags を生成し、
+    さらに検索用のベクトルを生成して保存する。
+    LLM 抽出に失敗した場合もフォールバック値で登録は成功する
+    （原文を失わないことを優先する設計）。
+
+    discovered_at が未指定なら日本時間の当日を入れる。
+    日次上限のカウントは created_at（JST基準）で行い、
+    LLM を呼ぶ前に判定してコスト流出を防ぐ。
+
+    Returns:
+        登録した発見。X-Daily-Remaining ヘッダーに本日の残り登録可能数を含む。
+
+    Raises:
+        HTTPException: 429 本日の登録上限に達している場合
     """
     dt = datetime.now(ZoneInfo("Asia/Tokyo"))
     today_zerotime = dt.replace(hour=0, minute=0, second=0, microsecond=0)

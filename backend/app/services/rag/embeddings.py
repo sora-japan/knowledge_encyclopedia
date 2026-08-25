@@ -24,7 +24,6 @@ def build_text(discovery: Discovery) -> str:
 
 
 def embed(texts: str, task_type: str) -> list[float]:
-    ef embed(texts: str, task_type: str) -> list[float]:
     """テキストを1536次元のベクトルに変換する。
 
     task_type は用途に応じて呼び出し側が指定する。
