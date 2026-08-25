@@ -6,6 +6,13 @@ from app.models import Discovery
 client = genai.Client(api_key=settings.GEMINI_API_KEY)
 
 def build_text(discovery: Discovery) -> str:
+    """発見1件を、埋め込み用の1つのテキストにまとめる。
+
+    title / category / tags / summary / raw_text をラベル付きで連結する。
+    ラベルを付けるのは、埋め込みモデルに構造を認識させるため。
+    重要度の高い項目を先頭に置いているのは、入力上限（約2048トークン）を
+    超えた場合に後方から切り捨てられるため。
+    """
     texts = f"""
         タイトル:{discovery.title}
         カテゴリ:{discovery.category}
@@ -17,6 +24,18 @@ def build_text(discovery: Discovery) -> str:
 
 
 def embed(texts: str, task_type: str) -> list[float]:
+    ef embed(texts: str, task_type: str) -> list[float]:
+    """テキストを1536次元のベクトルに変換する。
+
+    task_type は用途に応じて呼び出し側が指定する。
+      - 保存する発見側: "RETRIEVAL_DOCUMENT"
+      - 検索クエリ側:   "RETRIEVAL_QUERY"
+    両者を取り違えると同じベクトル空間に乗らず、検索精度が落ちる。
+
+    次元数を1536に固定しているのは、pgvector のインデックス上限が2000次元のため。
+    既定の3072では将来インデックスを張れない。
+    品質は3072と同等（MTEB同スコア）。
+    """
     result = client.models.embed_content(
         model = settings.EMBEDDING_MODEL,
         contents = texts,

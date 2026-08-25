@@ -10,6 +10,7 @@ from app.services.llm import analyze_text_with_llm
 from zoneinfo import ZoneInfo
 from datetime import datetime
 from app.config import settings
+from app.services.rag import build_text, embed
 
 router = APIRouter(
     prefix = "/api/discoveries",
@@ -43,6 +44,8 @@ def create_discovery(payload: DiscoveryCreate,response: Response, db: Session = 
         tags=ai_result.tags,
         discovered_at=discovered_at 
     )
+    text = build_text(discovery)
+    discovery.embedding = embed(text, "RETRIEVAL_DOCUMENT")
     db.add(discovery)
     db.commit()
     db.refresh(discovery)
