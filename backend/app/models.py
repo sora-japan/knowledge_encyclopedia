@@ -4,6 +4,7 @@ from typing_extensions import Annotated
 from datetime import datetime, date
 import uuid
 from app.db import Base
+from pgvector.sqlalchemy import Vector
 
 # 型の作成 Annotated
 # 本来はテーブル数の多い時に使用すると便利
@@ -29,6 +30,13 @@ class Discovery(Base):
     tags: Mapped[list[str]] = mapped_column(ARRAY(Text))
     discovered_at: Mapped[date_only] = mapped_column()
     created_at: Mapped[timestamp] = mapped_column(comment="作成日時")
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        comment="更新日時"
+    )
+    embedding: Mapped[list[float] | None] = mapped_column(Vector(1536))  
     __table_args__ = (
         Index("ix_discoveries_discovered_at", "discovered_at", "created_at"),
     )
