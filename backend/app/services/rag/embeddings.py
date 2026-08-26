@@ -28,7 +28,8 @@ def embed(texts: str, task_type: str) -> list[float]:
 
     task_type は用途に応じて呼び出し側が指定する。
       - 保存する発見側: "RETRIEVAL_DOCUMENT"
-      - 検索クエリ側:   "RETRIEVAL_QUERY"
+      - 質問する側："QUESTION_ANSWERING"
+      「質問文なら QUESTION_ANSWERING、単語検索なら RETRIEVAL_QUERY」「質問と答えは意味的に似ていないため、専用の最適化がある」
     両者を取り違えると同じベクトル空間に乗らず、検索精度が落ちる。
 
     次元数を1536に固定しているのは、pgvector のインデックス上限が2000次元のため。
