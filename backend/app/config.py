@@ -7,6 +7,7 @@ class Settings(BaseSettings):
     DAILY_LIMIT: int = 30
     CORS_ORIGINS: str = "http://localhost:3000"
     EMBEDDING_MODEL: str
+    VECTOR_THRESHOLD: float = 0.35
 
     model_config = SettingsConfigDict(env_file=".env")
 
