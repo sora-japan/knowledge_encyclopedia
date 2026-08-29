@@ -4,6 +4,9 @@ from app.schemas import ExtractedDiscovery
 from pydantic import ValidationError
 from app.enums import Category
 from logging import getLogger
+from sqlalchemy.orm import Session
+from app.models import Discovery, LlmCall
+from app.enums import LlmCallKind
 from google.genai._gaos.lib.compat_errors import APIError as InteractionsAPIError
 # Interactions API の例外階層が公開されたか → 公開されていれば import を差し替え
 
@@ -11,7 +14,7 @@ client = genai.Client(api_key=settings.GEMINI_API_KEY)
 
 logger = getLogger(__name__)
 
-def analyze_text_with_llm(raw_text: str) -> ExtractedDiscovery:
+def analyze_text_with_llm(db: Session, raw_text: str) -> ExtractedDiscovery:
     prompt = f"""
         ユーザーの入力「{raw_text}」
         が本日ユーザーが身につけた知識です。
@@ -33,6 +36,7 @@ def analyze_text_with_llm(raw_text: str) -> ExtractedDiscovery:
                     "schema": ExtractedDiscovery.model_json_schema()
                 },
             )
+            db.add(LlmCall(kind=LlmCallKind.EXTRACT))
             return ExtractedDiscovery.model_validate_json(interaction.output_text)
         except ValidationError as e:
             logger.warning("検証失敗、プロンプト調節を検討: %s", e)
@@ -49,12 +53,18 @@ def analyze_text_with_llm(raw_text: str) -> ExtractedDiscovery:
     )
 
 # 開発用: プロンプト調整時に python -m app.services.llm で実行
-# if __name__ == "__main__":
-#     tests = [
-#         "pandasのmergeはDataFrame同士を結合するときに使う",
-#         "mergeわかった",
-#         "今日は肩甲骨を寄せる意識で投げたらグルーピングが良くなった",
-#     ]
-#     for t in tests:
-#         print(f"\n--- 入力: {t}")
-#         print(analyze_text_with_llm(t))
+if __name__ == "__main__":
+    from app.db import SessionLocal
+
+    db = SessionLocal()
+    try:
+        tests = [
+            "pandasのmergeはDataFrame同士を結合するときに使う",
+            "mergeわかった",
+            "今日は肩甲骨を寄せる意識で投げたらグルーピングが良くなった",
+        ]
+        for t in tests:
+            print(f"\n--- 入力: {t}")
+            print(analyze_text_with_llm(db, t))
+    finally:
+        db.close()

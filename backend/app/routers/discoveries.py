@@ -11,6 +11,8 @@ from zoneinfo import ZoneInfo
 from datetime import datetime
 from app.config import settings
 from app.services.rag.embeddings import build_text, embed
+from app.services.usage import count_today
+from app.enums import LlmCallKind
 
 router = APIRouter(
     prefix = "/api/discoveries",
@@ -40,16 +42,14 @@ def create_discovery(payload: DiscoveryCreate,response: Response, db: Session = 
         HTTPException: 429 本日の登録上限に達している場合
     """
     dt = datetime.now(ZoneInfo("Asia/Tokyo"))
-    today_zerotime = dt.replace(hour=0, minute=0, second=0, microsecond=0)
-    stmt = select(func.count()).select_from(Discovery).where(Discovery.created_at >= today_zerotime)
-    count = db.execute(stmt).scalar()
+    count = count_today(db, LlmCallKind.EXTRACT)
     if count >= settings.DAILY_REGISTER_LIMIT:
         raise HTTPException(status_code=429, detail="1日の登録上限に達しました")
     if payload.discovered_at is None:
         discovered_at = dt.date()
     else:
         discovered_at = payload.discovered_at
-    ai_result = analyze_text_with_llm(payload.raw_text)
+    ai_result = analyze_text_with_llm(db, payload.raw_text)
     discovery = Discovery(
         raw_text=payload.raw_text, 
         title=ai_result.title, 
@@ -59,11 +59,11 @@ def create_discovery(payload: DiscoveryCreate,response: Response, db: Session = 
         discovered_at=discovered_at 
     )
     text = build_text(discovery)
-    discovery.embedding = embed(text, "RETRIEVAL_DOCUMENT")
+    discovery.embedding = embed(db, text, "RETRIEVAL_DOCUMENT")
     db.add(discovery)
     db.commit()
     db.refresh(discovery)
-    response.headers["X-Daily-Remaining"] = str(settings.DAILY_LIMIT - (count + 1))
+    response.headers["X-Daily-Remaining"] = str(settings.DAILY_REGISTER_LIMIT - (count + 1))
     return discovery
 
 # get一覧
@@ -92,6 +92,8 @@ def update_discovery(discovery_id: uuid.UUID, payload: DiscoveryUpdate, db: Anno
     discovery.summary = payload.summary
     discovery.tags = payload.tags
     discovery.discovered_at = payload.discovered_at
+    text = build_text(discovery)
+    discovery.embedding = embed(db, text, "RETRIEVAL_DOCUMENT")
     db.commit()
     db.refresh(discovery)
     return discovery

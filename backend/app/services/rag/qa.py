@@ -5,6 +5,8 @@ from app.schemas import AnsweredQuestion, DiscoveryResponse
 from app.config import settings
 from app.services.rag.search import search
 from logging import getLogger
+from app.models import LlmCall
+from app.enums import LlmCallKind
 
 client = genai.Client(api_key=settings.GEMINI_API_KEY)
 
@@ -38,6 +40,7 @@ def answer_question(db: Session, question: str) -> AiResponse:
     """
     result = search(db, question)
     if not result:
+        db.commit()
         return AiResponse(answer="該当する知識が見つかりませんでした", sources=[])
     # prompt組み立て
     # 内包表記で書くと、index = {d.id: d for d, _ in result}
@@ -67,6 +70,7 @@ def answer_question(db: Session, question: str) -> AiResponse:
             "schema": AnsweredQuestion.model_json_schema()
             },
         )
+    db.add(LlmCall(kind=LlmCallKind.ASK))
     ai_answer = AnsweredQuestion.model_validate_json(interaction.output_text)
     sources = []
     for source_id in ai_answer.source_ids:
@@ -74,7 +78,9 @@ def answer_question(db: Session, question: str) -> AiResponse:
             sources.append(DiscoveryResponse.model_validate(index[source_id]))
     if not sources:
         logger.warning("出典の検証に失敗: LLMが返したID %s", ai_answer.source_ids)
+        db.commit()
         return AiResponse(answer="根拠のある回答が得られませんでした", sources=[])
+    db.commit()
     return AiResponse(answer=ai_answer.answer, sources=sources)
 
 if __name__ == "__main__":

@@ -28,7 +28,7 @@ def search(db: Session, query: str, limit: int = 30) -> list[tuple[Discovery, fl
     Returns:
         (発見, コサイン距離) のリスト。距離の昇順。該当なしなら空
     """
-    query_embed = embed(query, "QUESTION_ANSWERING")
+    query_embed = embed(db, query, "QUESTION_ANSWERING")
     distance = Discovery.embedding.cosine_distance(query_embed)
     stmt = select(Discovery, distance).where(Discovery.embedding.isnot(None), distance < VECTOR_THRESHOLD).order_by(distance).limit(limit)
     #　意味の近さで検索している, 質問ベクトルとの距離が近い順にDBの行を並べる
@@ -40,7 +40,7 @@ if __name__ == "__main__":
 
     db = SessionLocal()
     try:
-        results = search(db, "Pythonについて教えて")
+        results = search(db, "カニについて何を学んだか教えて")
         for discovery, distance in results:
             print(discovery.title,"|", distance)
     finally:

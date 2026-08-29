@@ -26,3 +26,6 @@ def count_today(db: Session, kind: LlmCallKind) -> int:
     )
     today_count = db.execute(stmt).scalar()
     return today_count
+
+class DailyLimitExceeded(Exception):
+    pass

@@ -1,8 +1,10 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from app.routers import discoveries
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.routers import discoveries, ask
+from app.services.usage import DailyLimitExceeded
+from fastapi.responses import JSONResponse
 
 app = FastAPI()
 
@@ -17,6 +19,13 @@ app.add_middleware(
 
 app.include_router(discoveries.router)
 app.include_router(ask.router)
+
+@app.exception_handler(DailyLimitExceeded)
+def daily_limit_exceeded(request: Request, exc: DailyLimitExceeded):
+    return JSONResponse(
+        status_code=429,
+        content={"detail": "1日の利用上限に達しました"},
+    )
 
 # [コマンド] uvicorn app.main:app --reload
 @app.get("/health")
