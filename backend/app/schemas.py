@@ -42,4 +42,14 @@ class ExtractedDiscovery(BaseModel):
             return value[:5]
         return value
 
+class AskRequest(BaseModel):
+    question: str = Field(min_length = 1, max_length = 500)
+
+class AnsweredQuestion(BaseModel):
+    answer: str
+    source_ids: list[uuid.UUID]
+
+class AiResponse(BaseModel):
+    answer: str
+    sources: list[DiscoveryResponse]
 
