@@ -11,6 +11,31 @@ client = genai.Client(api_key=settings.GEMINI_API_KEY)
 logger = getLogger(__name__)
 
 def answer_question(db: Session, question: str) -> AiResponse:
+    """質問に対して、記録された発見だけを根拠に回答を生成する。
+
+    ハルシネーション対策として、プロンプトでの指示に加えて2つの機構を持つ。
+
+    1. 検索が0件なら LLM を呼ばずに返す
+       一般知識で答える経路が物理的に存在しなくなる。コストもゼロ。
+
+    2. LLM が返した source_ids を検索結果と突き合わせ、実在しないIDを除外する
+       構造化出力はキーの存在を保証するが、中身の正しさは保証しない。
+       LLM は存在しない出典を捏造することがある（研究では3〜13%）。
+       検証後に0件になった場合は、根拠のない回答として answer ごと破棄する。
+
+    プロンプトには raw_text（ユーザーの原文）を含める。
+    summary は既に LLM が1回加工したもので、それを根拠に再度生成すると
+    加工が二重になり誤りが増幅するため。
+    source_ids の検証は Advanced RAG の citation/attribution
+
+    Args:
+        db: 呼び出し側から渡すセッション
+        question: ユーザーの質問文
+
+    Returns:
+        AiResponse。sources が空の場合、answer は定型文に差し替わる。
+        「記録がない」場合と「出典を検証できなかった」場合でメッセージを分けている。
+    """
     result = search(db, question)
     if not result:
         return AiResponse(answer="該当する知識が見つかりませんでした", sources=[])
