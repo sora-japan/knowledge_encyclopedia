@@ -7,6 +7,10 @@ from app.services.rag.search import search
 from logging import getLogger
 from app.models import LlmCall
 from app.enums import LlmCallKind
+from pydantic import ValidationError
+from logging import getLogger
+from google.genai._gaos.lib.compat_errors import APIError as InteractionsAPIError
+# Interactions API の例外階層が公開されたか → 公開されていれば import を差し替え
 
 client = genai.Client(api_key=settings.GEMINI_API_KEY)
 
@@ -28,15 +32,24 @@ def answer_question(db: Session, question: str) -> AiResponse:
     プロンプトには raw_text（ユーザーの原文）を含める。
     summary は既に LLM が1回加工したもので、それを根拠に再度生成すると
     加工が二重になり誤りが増幅するため。
-    source_ids の検証は Advanced RAG の citation/attribution
+    
+    source_ids の検証は Advanced RAG の post-retrieval に分類される
+    citation / attribution（出典帰属）にあたる手法。
+    引用を出させるだけでは不十分で、検証まで行うことで捏造引用を防ぐ。
 
-    Args:
+        Args:
         db: 呼び出し側から渡すセッション
         question: ユーザーの質問文
 
     Returns:
         AiResponse。sources が空の場合、answer は定型文に差し替わる。
-        「記録がない」場合と「出典を検証できなかった」場合でメッセージを分けている。
+        定型文は3種類あり、状況によって使い分ける。
+          - 検索が0件（記録がない）
+          - 出典の検証に失敗（LLMが返したIDが実在しない）
+          - 生成に失敗（LLMの出力が不正、またはAPI呼び出しの失敗）
+
+        例外は投げない。LLM/API のエラーは内部で捕捉し、
+        必ず AiResponse を返すため、呼び出し側で try/except は不要。
     """
     result = search(db, question)
     if not result:
@@ -58,20 +71,30 @@ def answer_question(db: Session, question: str) -> AiResponse:
             原文 : {discovery.raw_text}
             ---
             """
+    try:
+        interaction = client.interactions.create(
+            model=settings.LLM_MODEL,
+            input=f"""ユーザーからの質問 : 「{question}」
+                使用した記録のIDをsource_idsに入れてください。
+                下記の記録だけを根拠に質問に答えてください\n""" + prompt,
+            response_format={
+                "type": "text",
+                "mime_type": "application/json",
+                "schema": AnsweredQuestion.model_json_schema()
+                },
+            )
+        db.add(LlmCall(kind=LlmCallKind.ASK))
+        ai_answer = AnsweredQuestion.model_validate_json(interaction.output_text)
+    except ValidationError as e:
+        logger.warning("検証失敗、プロンプト調節を検討: %s", e)
+        db.commit()
+        return AiResponse(answer="回答の生成に失敗しました", sources=[])
+    except InteractionsAPIError as e:
+        logger.warning("LLM API呼び出しに失敗: %s", e)
+        db.commit()
+        return AiResponse(answer="回答の生成に失敗しました", sources=[])
 
-    interaction = client.interactions.create(
-        model=settings.LLM_MODEL,
-        input=f"""ユーザーからの質問 : 「{question}」
-            使用した記録のIDをsource_idsに入れてください。
-            下記の記録だけを根拠に質問に答えてください\n""" + prompt,
-        response_format={
-            "type": "text",
-            "mime_type": "application/json",
-            "schema": AnsweredQuestion.model_json_schema()
-            },
-        )
-    db.add(LlmCall(kind=LlmCallKind.ASK))
-    ai_answer = AnsweredQuestion.model_validate_json(interaction.output_text)
+        
     sources = []
     for source_id in ai_answer.source_ids:
         if source_id in index:
