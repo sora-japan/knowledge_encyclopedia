@@ -41,3 +41,11 @@ class Discovery(Base):
         Index("ix_discoveries_discovered_at", "discovered_at", "created_at"),
     )
 
+class LlmCall(Base):
+    __tablename__ = "llm_calls"
+    id: Mapped[uuid_pk] = mapped_column(comment="LLM呼び出しの記録ID")
+    kind: Mapped[str] = mapped_column(String(20))
+    created_at: Mapped[timestamp] = mapped_column(comment="作成日時")
+    __table_args__ = (
+        Index("ix_llm_calls_kind_created_at", "kind", "created_at"),
+    )

@@ -43,7 +43,7 @@ def create_discovery(payload: DiscoveryCreate,response: Response, db: Session = 
     today_zerotime = dt.replace(hour=0, minute=0, second=0, microsecond=0)
     stmt = select(func.count()).select_from(Discovery).where(Discovery.created_at >= today_zerotime)
     count = db.execute(stmt).scalar()
-    if count >= settings.DAILY_LIMIT:
+    if count >= settings.DAILY_REGISTER_LIMIT:
         raise HTTPException(status_code=429, detail="1日の登録上限に達しました")
     if payload.discovered_at is None:
         discovered_at = dt.date()
