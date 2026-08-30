@@ -9,3 +9,8 @@ class Category(StrEnum):
     LANGUAGE_HUMANITIES = "言語・人文"
     SCIENCE = "科学"
     OTHER = "その他"
+
+class LlmCallKind(StrEnum):
+    EXTRACT = "extract"
+    EMBED = "embed"
+    ASK = "ask"

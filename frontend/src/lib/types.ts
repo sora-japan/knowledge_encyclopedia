@@ -9,6 +9,7 @@ export interface DiscoveryResponse{
   tags: string[];
   discovered_at: string; 
   created_at: string;
+  updated_at: string; 
 }
 
 export interface DiscoveryCreate {
@@ -26,4 +27,13 @@ export interface DiscoveryUpdate {
   summary: string;
   tags: string[];
   discovered_at: string;
+}
+
+export interface AskRequest {
+  question: string;
+}
+
+export interface AiResponse {
+  answer: string;
+  sources: DiscoveryResponse[];
 }
