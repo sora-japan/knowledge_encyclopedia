@@ -1,4 +1,4 @@
-import { DiscoveryResponse, DiscoveryCreate, DiscoveryUpdate } from "@/lib/types";
+import { DiscoveryResponse, DiscoveryCreate, DiscoveryUpdate, AskRequest, AiResponse } from "@/lib/types";
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL
 
@@ -106,4 +106,33 @@ export async function deleteDiscovery(id: string): Promise<void>{
   if (!response.ok){
     throw new Error(`削除に失敗しました: ${response.status}`);
   }
+}
+
+export async function askQuestion(
+  payload: AskRequest
+): Promise<AiResponse> {
+  if (!BASE_URL) {
+    throw new Error("NEXT_PUBLIC_API_BASE_URL が設定されていません");
+  }
+
+  const response = await fetch(`${BASE_URL}/api/ask`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+
+  if (response.status === 429) {
+    throw new Error("本日の質問回数の上限に達しました");
+  }
+
+  if (response.status === 502) {
+    throw new Error("回答の生成に失敗しました。しばらく待って再度お試しください");
+  }
+
+  if (!response.ok) {
+    throw new Error(`回答の取得に失敗しました: ${response.status}`);
+  }
+
+  return response.json();
+
 }

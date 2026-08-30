@@ -12,12 +12,20 @@ export default async function Home() {
           <h1 className="text-xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50">
             知識図鑑
           </h1>
-          <Link
-            href="/new"
-            className="inline-flex items-center justify-center rounded-xl bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-zinc-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200 dark:focus:ring-offset-zinc-950"
-          >
-            発見を登録
-          </Link>
+          <div className="flex items-center gap-2">
+            <Link
+              href="/ask"
+              className="rounded-lg px-2 py-1 text-sm text-zinc-500 transition hover:text-zinc-900 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:text-zinc-400 dark:hover:text-zinc-50"
+            >
+              図鑑に質問
+            </Link>
+            <Link
+              href="/new"
+              className="inline-flex items-center justify-center rounded-xl bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-zinc-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200 dark:focus:ring-offset-zinc-950"
+            >
+              発見を登録
+            </Link>
+          </div>
         </div>
       </header>
 
