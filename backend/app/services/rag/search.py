@@ -45,5 +45,3 @@ if __name__ == "__main__":
             print(discovery.title,"|", distance)
     finally:
         db.close()
-
-
