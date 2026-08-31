@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createDiscovery } from "@/lib/api";
+import SourceUrlsField from "@/components/SourceUrlsField";
 
 /** ローカルタイムでの今日を YYYY-MM-DD で返す（date 入力の初期値用） */
 function today(): string {
@@ -16,6 +17,7 @@ export default function DiscoveryForm() {
   const router = useRouter();
   const [rawText, setRawText] = useState("");
   const [discoveredAt, setDiscoveredAt] = useState("");
+  const [sourceUrls, setSourceUrls] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -39,6 +41,7 @@ export default function DiscoveryForm() {
       await createDiscovery({
         raw_text: rawText,
         discovered_at: discoveredAt || undefined,
+        source_urls: sourceUrls,
       });
       router.push("/");
       router.refresh();
@@ -91,6 +94,12 @@ export default function DiscoveryForm() {
           className="w-full rounded-xl border border-black/[.08] bg-white px-3.5 py-2.5 text-sm text-zinc-900 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-60 sm:w-52 dark:border-white/10 dark:bg-white/[.04] dark:text-zinc-50"
         />
       </div>
+
+      <SourceUrlsField
+        urls={sourceUrls}
+        onChange={setSourceUrls}
+        disabled={submitting}
+      />
 
       {error && (
         <p

@@ -10,11 +10,13 @@ export interface DiscoveryResponse{
   discovered_at: string; 
   created_at: string;
   updated_at: string; 
+  source_urls: string[];
 }
 
 export interface DiscoveryCreate {
   raw_text: string;
   discovered_at?: string;
+  source_urls?: string[];
 }
 
 /**
@@ -27,6 +29,7 @@ export interface DiscoveryUpdate {
   summary: string;
   tags: string[];
   discovered_at: string;
+  source_urls: string[];
 }
 
 export interface AskRequest {

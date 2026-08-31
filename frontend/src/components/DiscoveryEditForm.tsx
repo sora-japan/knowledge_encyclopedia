@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { updateDiscovery } from "@/lib/api";
 import { Category, DiscoveryResponse } from "@/lib/types";
 import { CATEGORIES } from "@/lib/categoryStyle";
+import SourceUrlsField from "@/components/SourceUrlsField";
 
 /** タグの上限。バックエンドの DiscoveryUpdate に合わせている */
 const MAX_TAGS = 5;
@@ -31,6 +32,7 @@ export default function DiscoveryEditForm({ discovery }: Props) {
   const [discoveredAt, setDiscoveredAt] = useState(
     toDateInputValue(discovery.discovered_at)
   );
+  const [sourceUrls, setSourceUrls] = useState<string[]>(discovery.source_urls);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -71,6 +73,7 @@ export default function DiscoveryEditForm({ discovery }: Props) {
         summary,
         tags,
         discovered_at: discoveredAt,
+        source_urls: sourceUrls,
       });
       router.push(`/discoveries/${discovery.id}`);
       router.refresh();
@@ -225,6 +228,12 @@ export default function DiscoveryEditForm({ discovery }: Props) {
           className="w-full rounded-xl border border-black/[.08] bg-white px-3.5 py-2.5 text-sm text-zinc-900 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-60 sm:w-52 dark:border-white/10 dark:bg-white/[.04] dark:text-zinc-50"
         />
       </div>
+
+      <SourceUrlsField
+        urls={sourceUrls}
+        onChange={setSourceUrls}
+        disabled={submitting}
+      />
 
       {/* raw_text は編集できないので、詳細ページと同じ見た目で表示だけする */}
       <section className="mt-1 border-t border-black/[.06] pt-5 dark:border-white/10">

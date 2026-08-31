@@ -94,6 +94,29 @@ export default async function DiscoveryDetailPage({ params }: Props) {
             </div>
           )}
 
+          {discovery.source_urls.length > 0 && (
+            <section className="mt-1 border-t border-black/[.06] pt-5 dark:border-white/10">
+              <h2 className="mb-2 text-xs font-medium tracking-wide text-zinc-400 dark:text-zinc-500">
+                参考URL
+              </h2>
+              <ul className="flex flex-col gap-1.5">
+                {discovery.source_urls.map((url) => (
+                  <li key={url}>
+                    {/* 外部サイトへ出るので新しいタブ + rel で参照元を渡さない */}
+                    <a
+                      href={url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="break-all text-sm text-blue-600 underline underline-offset-2 transition hover:text-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:text-blue-400 dark:hover:text-blue-300"
+                    >
+                      {url}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+
           {/* 元の入力は AI が整形した本文と混ざらないよう、囲みと等幅で区別する */}
           <section className="mt-1 border-t border-black/[.06] pt-5 dark:border-white/10">
             <h2 className="mb-2 text-xs font-medium tracking-wide text-zinc-400 dark:text-zinc-500">

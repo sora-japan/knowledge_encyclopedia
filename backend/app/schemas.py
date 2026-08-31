@@ -2,10 +2,16 @@ from pydantic import BaseModel, Field, ConfigDict, field_validator
 from datetime import date, datetime
 import uuid
 from app.enums import Category
+from pydantic import HttpUrl
+from typing_extensions import Annotated
+from pydantic.functional_validators import AfterValidator
+
+UrlStr = Annotated[HttpUrl, AfterValidator(str)]
 
 class DiscoveryCreate(BaseModel):
     raw_text: str = Field(min_length = 1, max_length = 1000)
     discovered_at: date | None = None
+    source_urls: list[UrlStr]  = Field(max_length = 10, default=[])
 
 class DiscoveryUpdate(BaseModel):
     title: str = Field(min_length = 1, max_length = 30, description="タイトル")
@@ -13,6 +19,7 @@ class DiscoveryUpdate(BaseModel):
     summary: str = Field(min_length = 1, max_length = 120, description="要約")
     tags: list[str] = Field(min_length = 0, max_length = 5) 
     discovered_at: date
+    source_urls: list[UrlStr] = Field(max_length = 10)
 
 class DiscoveryResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -25,6 +32,7 @@ class DiscoveryResponse(BaseModel):
     discovered_at: date
     created_at: datetime
     updated_at: datetime
+    source_urls: list[str]
 
 class ExtractedDiscovery(BaseModel):
     title: str = Field(min_length = 1, max_length = 30)

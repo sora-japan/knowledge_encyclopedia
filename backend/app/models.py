@@ -37,6 +37,7 @@ class Discovery(Base):
         comment="更新日時"
     )
     embedding: Mapped[list[float] | None] = mapped_column(Vector(1536))  
+    source_urls: Mapped[list[str]] = mapped_column(ARRAY(Text), server_default='{}')
     __table_args__ = (
         Index("ix_discoveries_discovered_at", "discovered_at", "created_at"),
     )
