@@ -56,7 +56,8 @@ def create_discovery(payload: DiscoveryCreate,response: Response, db: Session = 
         category=ai_result.category,
         summary=ai_result.summary,
         tags=ai_result.tags,
-        discovered_at=discovered_at 
+        discovered_at=discovered_at, 
+        source_urls=payload.source_urls,
     )
     text = build_text(discovery)
     discovery.embedding = embed(db, text, "RETRIEVAL_DOCUMENT")
