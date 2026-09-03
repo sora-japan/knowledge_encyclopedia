@@ -37,14 +37,17 @@ export default async function Home() {
 
         {/* 全件書き出しは主要操作ではないので、一覧を見終えた末尾に控えめに置く */}
         {apiBaseUrl && (
-          <div className="mt-8 flex justify-end">
+          <div className="mt-8 flex flex-col items-end gap-0.5">
             {/* Content-Disposition が付くので、リンクを開くだけで zip が落ちてくる */}
             <a
               href={`${apiBaseUrl}/api/export/okf`}
               className="rounded-lg px-2 py-1 text-sm text-zinc-500 transition hover:text-zinc-900 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:text-zinc-400 dark:hover:text-zinc-50"
             >
-              全件をOKF形式でダウンロード
+              すべてMarkdownで書き出す
             </a>
+            <p className="px-2 text-xs text-zinc-400 dark:text-zinc-500">
+              zip でまとめて落ちてきます。Obsidian などで開けます。
+            </p>
           </div>
         )}
       </main>

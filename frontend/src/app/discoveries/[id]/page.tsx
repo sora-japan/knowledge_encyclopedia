@@ -58,7 +58,7 @@ export default async function DiscoveryDetailPage({ params }: Props) {
                 href={`${apiBaseUrl}/api/export/okf/${id}`}
                 className="inline-flex items-center rounded-lg px-2 py-1 text-sm font-medium text-zinc-600 transition hover:bg-zinc-100 hover:text-zinc-900 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:text-zinc-400 dark:hover:bg-white/[.06] dark:hover:text-zinc-50"
               >
-                OKF形式でダウンロード
+                Markdownでダウンロード
               </a>
             )}
             <Link
