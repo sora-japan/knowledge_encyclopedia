@@ -6,3 +6,4 @@ psycopg[binary]
 pydantic-settings
 google-genai
 pgvector
+pyyaml

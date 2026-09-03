@@ -2,7 +2,7 @@ from fastapi import FastAPI, Request
 from app.routers import discoveries
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
-from app.routers import discoveries, ask
+from app.routers import discoveries, ask, export
 from app.services.usage import DailyLimitExceeded
 from fastapi.responses import JSONResponse
 
@@ -19,6 +19,7 @@ app.add_middleware(
 
 app.include_router(discoveries.router)
 app.include_router(ask.router)
+app.include_router(export.router)
 
 @app.exception_handler(DailyLimitExceeded)
 def daily_limit_exceeded(request: Request, exc: DailyLimitExceeded):

@@ -44,7 +44,7 @@ def to_markdown(discovery: Discovery) -> str:
 
 {discovery.discovered_at}
 """
-    return f"---\n{yaml_data}---\n\n{body}\n"
+    return f"---\n{yaml_data}---\n\n{body}"
 
 def build_filename(title: str, seen: dict) -> str:
     """
