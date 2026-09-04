@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { DiscoveryNotFoundError, fetchDiscoveryById } from "@/lib/api";
 import { DiscoveryResponse } from "@/lib/types";
 import { categoryStyle } from "@/lib/categoryStyle";
+import { browserApiPath } from "@/lib/apiUrl";
 import DeleteButton from "@/components/DeleteButton";
 
 /**
@@ -37,9 +38,6 @@ export default async function DiscoveryDetailPage({ params }: Props) {
 
   const style = categoryStyle(discovery.category);
 
-  // 未設定のまま href="undefined/..." を出すと壊れたリンクになるので、その場合は出さない
-  const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
-
   return (
     <div className="flex flex-1 flex-col bg-zinc-50 dark:bg-zinc-950">
       <header className="border-b border-black/[.06] bg-white dark:border-white/10 dark:bg-zinc-900">
@@ -52,15 +50,13 @@ export default async function DiscoveryDetailPage({ params }: Props) {
             図鑑に戻る
           </Link>
           <div className="flex items-center gap-1">
-            {apiBaseUrl && (
-              /* Content-Disposition が付くので、リンクを開くだけで .md が落ちてくる */
-              <a
-                href={`${apiBaseUrl}/api/export/okf/${id}`}
-                className="inline-flex items-center rounded-lg px-2 py-1 text-sm font-medium text-zinc-600 transition hover:bg-zinc-100 hover:text-zinc-900 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:text-zinc-400 dark:hover:bg-white/[.06] dark:hover:text-zinc-50"
-              >
-                Markdownでダウンロード
-              </a>
-            )}
+            {/* Content-Disposition が付くので、リンクを開くだけで .md が落ちてくる */}
+            <a
+              href={browserApiPath(`/export/okf/${id}`)}
+              className="inline-flex items-center rounded-lg px-2 py-1 text-sm font-medium text-zinc-600 transition hover:bg-zinc-100 hover:text-zinc-900 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:text-zinc-400 dark:hover:bg-white/[.06] dark:hover:text-zinc-50"
+            >
+              Markdownでダウンロード
+            </a>
             <Link
               href={`/discoveries/${id}/edit`}
               className="inline-flex items-center rounded-lg px-2 py-1 text-sm font-medium text-zinc-600 transition hover:bg-zinc-100 hover:text-zinc-900 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:text-zinc-400 dark:hover:bg-white/[.06] dark:hover:text-zinc-50"

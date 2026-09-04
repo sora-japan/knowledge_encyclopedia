@@ -1,6 +1,14 @@
 import { DiscoveryResponse, DiscoveryCreate, DiscoveryUpdate, AskRequest, AiResponse } from "@/lib/types";
+import { browserApiPath, serverApiUrl } from "@/lib/apiUrl";
 
-const BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL
+/**
+ * API呼び出しの集約先。呼び出し元によってURLの作り方が2通りある。
+ *
+ * - Server Component から呼ぶもの → serverApiUrl（FastAPI を直接叩く）
+ * - Client Component から呼ぶもの → browserApiPath（/api のプロキシを通る）
+ *
+ * 各関数のコメントでどちら側から呼ぶものかを明示している。
+ */
 
 /**
  * 存在しないIDを引いたときのエラー。
@@ -8,11 +16,9 @@ const BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL
  */
 export class DiscoveryNotFoundError extends Error {}
 
+/** Server Component 用 */
 export async function fetchDiscoveries(): Promise<DiscoveryResponse[]> {
-  if (!BASE_URL){
-    throw new Error("NEXT_PUBLIC_API_BASE_URL が設定されていません");
-  }
-  const response = await fetch(`${BASE_URL}/api/discoveries`, {
+  const response = await fetch(serverApiUrl("/discoveries"), {
     cache: "no-store",
   });
   if (!response.ok){
@@ -21,14 +27,11 @@ export async function fetchDiscoveries(): Promise<DiscoveryResponse[]> {
   return response.json();
 }
 
+/** Client Component 用 */
 export async function createDiscovery(
   payload: DiscoveryCreate
 ): Promise<DiscoveryResponse>{
-  if (!BASE_URL){
-    throw new Error("NEXT_PUBLIC_API_BASE_URL が設定されていません");
-  }
-
-  const response = await fetch(`${BASE_URL}/api/discoveries`, {
+  const response = await fetch(browserApiPath("/discoveries"), {
     method: "POST",
     headers: {"Content-Type": "application/json"},
     body: JSON.stringify(payload),
@@ -45,12 +48,9 @@ export async function createDiscovery(
   return response.json();
 }
 
+/** Server Component 用 */
 export async function fetchDiscoveryById(id: string): Promise<DiscoveryResponse>{
-  if (!BASE_URL){
-    throw new Error("NEXT_PUBLIC_API_BASE_URL が設定されていません");
-  }
-
-  const response = await fetch(`${BASE_URL}/api/discoveries/${id}`, {
+  const response = await fetch(serverApiUrl(`/discoveries/${id}`), {
     cache: "no-store",
   });
 
@@ -65,15 +65,12 @@ export async function fetchDiscoveryById(id: string): Promise<DiscoveryResponse>
   return response.json();
 }
 
+/** Client Component 用 */
 export async function updateDiscovery(
   id: string,
   payload: DiscoveryUpdate
 ): Promise<DiscoveryResponse>{
-  if (!BASE_URL){
-    throw new Error("NEXT_PUBLIC_API_BASE_URL が設定されていません");
-  }
-
-  const response = await fetch(`${BASE_URL}/api/discoveries/${id}`, {
+  const response = await fetch(browserApiPath(`/discoveries/${id}`), {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
@@ -90,12 +87,9 @@ export async function updateDiscovery(
   return response.json();
 }
 
+/** Client Component 用 */
 export async function deleteDiscovery(id: string): Promise<void>{
-  if (!BASE_URL){
-    throw new Error("NEXT_PUBLIC_API_BASE_URL が設定されていません");
-  }
-
-  const response = await fetch(`${BASE_URL}/api/discoveries/${id}`, {
+  const response = await fetch(browserApiPath(`/discoveries/${id}`), {
     method: "DELETE",
   });
 
@@ -108,14 +102,11 @@ export async function deleteDiscovery(id: string): Promise<void>{
   }
 }
 
+/** Client Component 用 */
 export async function askQuestion(
   payload: AskRequest
 ): Promise<AiResponse> {
-  if (!BASE_URL) {
-    throw new Error("NEXT_PUBLIC_API_BASE_URL が設定されていません");
-  }
-
-  const response = await fetch(`${BASE_URL}/api/ask`, {
+  const response = await fetch(browserApiPath("/ask"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),

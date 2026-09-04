@@ -1,12 +1,10 @@
 import Link from "next/link";
 import { fetchDiscoveries } from "@/lib/api";
+import { browserApiPath } from "@/lib/apiUrl";
 import DiscoveryGrid from "@/components/DiscoveryGrid";
 
 export default async function Home() {
   const discoveries = await fetchDiscoveries();
-
-  // 未設定のまま href="undefined/..." を出すと壊れたリンクになるので、その場合は出さない
-  const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
 
   return (
     <div className="flex flex-1 flex-col bg-zinc-50 dark:bg-zinc-950">
@@ -36,17 +34,15 @@ export default async function Home() {
         <DiscoveryGrid discoveries={discoveries} />
 
         {/* 全件書き出しは主要操作ではないので、一覧を見終えた末尾に控えめに置く */}
-        {apiBaseUrl && (
-          <div className="mt-8 flex flex-col items-end">
-            {/* Content-Disposition が付くので、リンクを開くだけで zip が落ちてくる */}
-            <a
-              href={`${apiBaseUrl}/api/export/okf`}
-              className="rounded-lg px-2 py-1 text-sm text-zinc-500 transition hover:text-zinc-900 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:text-zinc-400 dark:hover:text-zinc-50"
-            >
-              すべてMarkdownで書き出す
-            </a>
-          </div>
-        )}
+        <div className="mt-8 flex flex-col items-end">
+          {/* Content-Disposition が付くので、リンクを開くだけで zip が落ちてくる */}
+          <a
+            href={browserApiPath("/export/okf")}
+            className="rounded-lg px-2 py-1 text-sm text-zinc-500 transition hover:text-zinc-900 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:text-zinc-400 dark:hover:text-zinc-50"
+          >
+            すべてMarkdownで書き出す
+          </a>
+        </div>
       </main>
     </div>
   );
