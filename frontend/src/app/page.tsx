@@ -37,7 +37,7 @@ export default async function Home() {
 
         {/* 全件書き出しは主要操作ではないので、一覧を見終えた末尾に控えめに置く */}
         {apiBaseUrl && (
-          <div className="mt-8 flex flex-col items-end gap-0.5">
+          <div className="mt-8 flex flex-col items-end">
             {/* Content-Disposition が付くので、リンクを開くだけで zip が落ちてくる */}
             <a
               href={`${apiBaseUrl}/api/export/okf`}
@@ -45,9 +45,6 @@ export default async function Home() {
             >
               すべてMarkdownで書き出す
             </a>
-            <p className="px-2 text-xs text-zinc-400 dark:text-zinc-500">
-              zip でまとめて落ちてきます。Obsidian などで開けます。
-            </p>
           </div>
         )}
       </main>
