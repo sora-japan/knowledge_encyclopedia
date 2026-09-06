@@ -3,10 +3,11 @@ from sqlalchemy.orm import Session
 from app.services.rag.embeddings import embed
 from sqlalchemy import select
 from app.config import settings
+from app.auth import CurrentUser
 
 VECTOR_THRESHOLD = settings.VECTOR_THRESHOLD
 
-def search(db: Session, query: str, limit: int = 30) -> list[tuple[Discovery, float]]:
+def search(db: Session, query: str, current_user: CurrentUser, limit: int = 30) -> list[tuple[Discovery, float]]:
     """質問文に意味が近い発見を、コサイン距離が小さい順に取得する。
 
     質問文を QUESTION_ANSWERING で埋め込み、保存済みのベクトルと比較する。
@@ -28,20 +29,18 @@ def search(db: Session, query: str, limit: int = 30) -> list[tuple[Discovery, fl
     Returns:
         (発見, コサイン距離) のリスト。距離の昇順。該当なしなら空
     """
-    query_embed = embed(db, query, "QUESTION_ANSWERING")
+    query_embed = embed(db, query, "QUESTION_ANSWERING", current_user)
     distance = Discovery.embedding.cosine_distance(query_embed)
-    stmt = select(Discovery, distance).where(Discovery.embedding.isnot(None), distance < VECTOR_THRESHOLD).order_by(distance).limit(limit)
+    stmt = (
+        select(Discovery, distance)
+        .where(
+            Discovery.user_id == current_user.user_id, 
+            Discovery.embedding.isnot(None),
+            distance < VECTOR_THRESHOLD,
+        )
+        .order_by(distance)
+        .limit(limit)
+    )
     #　意味の近さで検索している, 質問ベクトルとの距離が近い順にDBの行を並べる
     search_query_and_discovery = db.execute(stmt).all()
     return search_query_and_discovery
-
-if __name__ == "__main__":
-    from app.db import SessionLocal
-
-    db = SessionLocal()
-    try:
-        results = search(db, "カニについて何を学んだか教えて")
-        for discovery, distance in results:
-            print(discovery.title,"|", distance)
-    finally:
-        db.close()

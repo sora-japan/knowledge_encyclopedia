@@ -4,8 +4,8 @@ from google.genai import types
 from app.models import Discovery, LlmCall
 from app.enums import LlmCallKind
 from sqlalchemy.orm import Session
-from app.services.usage import count_today
-from app.services.usage import DailyLimitExceeded
+from app.services.usage import check_limit
+from app.auth import CurrentUser
 
 client = genai.Client(api_key=settings.GEMINI_API_KEY)
 
@@ -27,7 +27,7 @@ def build_text(discovery: Discovery) -> str:
     return texts 
 
 
-def embed(db: Session, texts: str, task_type: str) -> list[float]:
+def embed(db: Session, texts: str, task_type: str, current_user: CurrentUser) -> list[float]:
     """テキストを1536次元のベクトルに変換する。
 
     task_type は用途に応じて呼び出し側が指定する。
@@ -48,40 +48,28 @@ def embed(db: Session, texts: str, task_type: str) -> list[float]:
         db: 呼び出し側のセッション。記録のためだけに使う
         texts: 埋め込む文字列
         task_type: RETRIEVAL_DOCUMENT / QUESTION_ANSWERING など
+        current_user: 上限判定と llm_calls への記録に使う
 
     Returns:
         1536個の浮動小数点数のリスト
     
-    呼び出しの前に日次上限を確認する。
+    呼び出しの前に上限を確認する。
     上限に達している場合は API を呼ばずに例外を投げるため、課金が発生しない。
+    許可リスト内は日次、試用側は累計と試用全体の日次の両方を見る。
 
     Raises:
-        DailyLimitExceeded: 本日の埋め込み呼び出し上限に達している場合
+        DailyLimitExceeded: 上限に達している場合（main.py で 429 に変換される）
+    
     """
-    if count_today(db, LlmCallKind.EMBED) >= settings.DAILY_EMBED_LIMIT:
-        raise DailyLimitExceeded()
+    check_limit(db, LlmCallKind.EMBED, current_user)
     result = client.models.embed_content(
         model = settings.EMBEDDING_MODEL,
         contents = texts,
         config = types.EmbedContentConfig(task_type = task_type, output_dimensionality=1536)
     )
-    db.add(LlmCall(kind=LlmCallKind.EMBED))
+    db.add(LlmCall(
+        kind=LlmCallKind.EMBED,
+        user_id=current_user.user_id,
+        is_trial=current_user.is_trial,
+    ))
     return result.embeddings[0].values 
-
-if __name__ == "__main__":
-    from app.db import SessionLocal
-
-    db = SessionLocal()
-    try:
-        texts = f"""
-            タイトル:CORSの基礎知識
-            カテゴリ:プログラミング
-            タグ:["CORS","Web開発","セキュリティ","HTTP"]
-            要約:ブラウザのセキュリティ機能であるCORS（Cross-Origin Resource Sharing）について学習しました。異なるドメイン間でのリクエストを安全に制御するための仕組みです。
-            原文:CORSについて
-            """
-        task_type = 'RETRIEVAL_DOCUMENT'
-        result = embed(db, texts, task_type)
-        print(len(result))
-    finally:
-        db.close()

@@ -8,6 +8,8 @@ from urllib.parse import quote
 import io
 import zipfile
 from sqlalchemy import select
+from app.auth import get_current_user, CurrentUser
+from app.services.ownership import get_owned_discovery
 
 router = APIRouter(
     prefix = "/api/export/okf",
@@ -15,11 +17,9 @@ router = APIRouter(
 )
 
 @router.get("/{discovery_id}")
-def export_one(discovery_id: uuid.UUID, db: Session = Depends(get_db)):
+def export_one(discovery_id: uuid.UUID, db: Session = Depends(get_db), current_user: CurrentUser = Depends(get_current_user)):
     """発見1件を OKF 形式の Markdown で返す。"""
-    discovery = db.get(Discovery, discovery_id)
-    if discovery is None:
-        raise HTTPException(status_code=404, detail="discovery not found")
+    discovery = get_owned_discovery(db, discovery_id, current_user.user_id)
     filename = sanitize(discovery.title) + ".md"
     return Response(
         content=to_markdown(discovery),
@@ -30,9 +30,9 @@ def export_one(discovery_id: uuid.UUID, db: Session = Depends(get_db)):
     )
 
 @router.get("")
-def export_all(db: Session = Depends(get_db)):
+def export_all(db: Session = Depends(get_db), current_user: CurrentUser = Depends(get_current_user)):
     """全件を OKF バンドル（zip）で返す。"""
-    stmt = select(Discovery)
+    stmt = select(Discovery).where(Discovery.user_id == current_user.user_id)
     discoveries = db.execute(stmt).scalars().all()
 
     seen = {}

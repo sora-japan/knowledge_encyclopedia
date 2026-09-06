@@ -11,6 +11,7 @@ from pgvector.sqlalchemy import Vector
 uuid_pk = Annotated[uuid.UUID, mapped_column(
     Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4
 )]
+user_uuid = Annotated[uuid.UUID, mapped_column(Uuid(as_uuid=True))]
 str_100 = Annotated[str, mapped_column(String(100))]
 str_50 = Annotated[str, mapped_column(String(50))]
 timestamp = Annotated[
@@ -23,6 +24,7 @@ date_only = Annotated[date, mapped_column(Date)]
 class Discovery(Base):
     __tablename__ = "discoveries" # テーブル名
     id: Mapped[uuid_pk] = mapped_column(comment="発見ID")
+    user_id: Mapped[user_uuid] = mapped_column(comment="ユーザーID")
     raw_text: Mapped[str] = mapped_column(Text)
     title: Mapped[str_100] = mapped_column()
     category: Mapped[str_50] = mapped_column()
@@ -39,14 +41,18 @@ class Discovery(Base):
     embedding: Mapped[list[float] | None] = mapped_column(Vector(1536))  
     source_urls: Mapped[list[str]] = mapped_column(ARRAY(Text), server_default='{}')
     __table_args__ = (
-        Index("ix_discoveries_discovered_at", "discovered_at", "created_at"),
+        Index("ix_user_id_discoveries_discovered_at","user_id", "discovered_at", "created_at"),
     )
 
 class LlmCall(Base):
     __tablename__ = "llm_calls"
     id: Mapped[uuid_pk] = mapped_column(comment="LLM呼び出しの記録ID")
+    user_id: Mapped[user_uuid] = mapped_column(comment="ユーザーID")
     kind: Mapped[str] = mapped_column(String(20))
     created_at: Mapped[timestamp] = mapped_column(comment="作成日時")
+    is_trial: Mapped[bool] = mapped_column(comment="呼び出し時点で許可リスト外だったかどうか")
     __table_args__ = (
         Index("ix_llm_calls_kind_created_at", "kind", "created_at"),
+        Index("ix_llm_calls_user_id_kind_created_at", "user_id", "kind", "created_at"),# 許可リスト内のユーザーごとの集計に使う
+        Index("ix_llm_calls_is_trial_kind_created_at", "is_trial", "kind", "created_at"),
     )

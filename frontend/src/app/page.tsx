@@ -1,7 +1,8 @@
 import Link from "next/link";
-import { fetchDiscoveries } from "@/lib/api";
+import { fetchDiscoveries } from "@/lib/serverApi";
 import { browserApiPath } from "@/lib/apiUrl";
 import DiscoveryGrid from "@/components/DiscoveryGrid";
+import LogoutButton from "@/components/LogoutButton";
 
 export default async function Home() {
   const discoveries = await fetchDiscoveries();
@@ -26,6 +27,7 @@ export default async function Home() {
             >
               発見を登録
             </Link>
+            <LogoutButton />
           </div>
         </div>
       </header>

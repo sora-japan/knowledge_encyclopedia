@@ -1,18 +1,19 @@
-from fastapi import APIRouter, Depends, Query, HTTPException, Response
+from fastapi import APIRouter, Depends, Query
 from app.schemas import DiscoveryCreate, DiscoveryResponse, DiscoveryUpdate 
 from app.models import Discovery
 from app.db import get_db
 from sqlalchemy.orm import Session
-from sqlalchemy import select, func
+from sqlalchemy import select
 from typing import Annotated
 import uuid
 from app.services.llm import analyze_text_with_llm
 from zoneinfo import ZoneInfo
 from datetime import datetime
-from app.config import settings
 from app.services.rag.embeddings import build_text, embed
-from app.services.usage import count_today
+from app.services.usage import check_limit
 from app.enums import LlmCallKind
+from app.auth import get_current_user, CurrentUser
+from app.services.ownership import get_owned_discovery
 
 router = APIRouter(
     prefix = "/api/discoveries",
@@ -23,7 +24,7 @@ router = APIRouter(
 # データを送信したい時、post
 # ユーザーから２項目受け取り、８項目返す
 @router.post("", response_model=DiscoveryResponse, status_code=201)
-def create_discovery(payload: DiscoveryCreate,response: Response, db: Session = Depends(get_db)):
+def create_discovery(payload: DiscoveryCreate, db: Session = Depends(get_db), current_user: CurrentUser = Depends(get_current_user)):
     """発見を1件登録する。
 
     raw_text を LLM に渡して title/category/summary/tags を生成し、
@@ -36,21 +37,21 @@ def create_discovery(payload: DiscoveryCreate,response: Response, db: Session = 
     LLM を呼ぶ前に判定してコスト流出を防ぐ。
 
     Returns:
-        登録した発見。X-Daily-Remaining ヘッダーに本日の残り登録可能数を含む。
+        登録した発見。
 
     Raises:
-        HTTPException: 429 本日の登録上限に達している場合
+        DailyLimitExceeded: 上限に達している場合（main.py で 429 に変換される）
+
     """
     dt = datetime.now(ZoneInfo("Asia/Tokyo"))
-    count = count_today(db, LlmCallKind.EXTRACT)
-    if count >= settings.DAILY_REGISTER_LIMIT:
-        raise HTTPException(status_code=429, detail="1日の登録上限に達しました")
+    check_limit(db, LlmCallKind.EXTRACT, current_user)
     if payload.discovered_at is None:
         discovered_at = dt.date()
     else:
         discovered_at = payload.discovered_at
-    ai_result = analyze_text_with_llm(db, payload.raw_text)
+    ai_result = analyze_text_with_llm(db, payload.raw_text, current_user)
     discovery = Discovery(
+        user_id=current_user.user_id,
         raw_text=payload.raw_text, 
         title=ai_result.title, 
         category=ai_result.category,
@@ -60,49 +61,48 @@ def create_discovery(payload: DiscoveryCreate,response: Response, db: Session = 
         source_urls=payload.source_urls,
     )
     text = build_text(discovery)
-    discovery.embedding = embed(db, text, "RETRIEVAL_DOCUMENT")
+    discovery.embedding = embed(db, text, "RETRIEVAL_DOCUMENT", current_user)
     db.add(discovery)
     db.commit()
     db.refresh(discovery)
-    response.headers["X-Daily-Remaining"] = str(settings.DAILY_REGISTER_LIMIT - (count + 1))
     return discovery
 
 # get一覧
 @router.get("", response_model=list[DiscoveryResponse])
-def list_discovery(limit: Annotated[int, Query(ge=1, le=100)] = 50, offset: Annotated[int, Query(ge=0)] = 0, db: Session = Depends(get_db)):
-    stmt = select(Discovery).order_by(Discovery.discovered_at.desc(), Discovery.created_at.desc()).limit(limit).offset(offset)
+def list_discovery(limit: Annotated[int, Query(ge=1, le=100)] = 50, offset: Annotated[int, Query(ge=0)] = 0, db: Session = Depends(get_db), current_user: CurrentUser = Depends(get_current_user)):
+    stmt = (
+        select(Discovery)
+        .where(Discovery.user_id == current_user.user_id)
+        .order_by(Discovery.discovered_at.desc(), Discovery.created_at.desc())
+        .limit(limit)
+        .offset(offset)
+    )
     db_list = db.execute(stmt).scalars().all()
     return db_list
 
 # get詳細
 @router.get("/{discovery_id}", response_model=DiscoveryResponse)
-def detail_discovery(discovery_id: uuid.UUID, db: Session = Depends(get_db)):
-    discovery = db.get(Discovery, discovery_id)
-    if discovery is None:
-        raise HTTPException(status_code=404, detail="discovery not found")
+def detail_discovery(discovery_id: uuid.UUID, db: Session = Depends(get_db), current_user: CurrentUser = Depends(get_current_user)):
+    discovery = get_owned_discovery(db, discovery_id, current_user.user_id)
     return discovery
 
 # db: Annotated[Session, Depends(get_db)]とdb: Session = Depends(get_db)は同じ意味になる。学習のため、2つを使用
 @router.put("/{discovery_id}", response_model=DiscoveryResponse)
-def update_discovery(discovery_id: uuid.UUID, payload: DiscoveryUpdate, db: Annotated[Session, Depends(get_db)]):
-    discovery = db.get(Discovery, discovery_id)
-    if discovery is None:
-        raise HTTPException(status_code=404, detail="discovery not found")
+def update_discovery(discovery_id: uuid.UUID, payload: DiscoveryUpdate, db: Annotated[Session, Depends(get_db)], current_user: CurrentUser = Depends(get_current_user)):
+    discovery = get_owned_discovery(db, discovery_id, current_user.user_id)
     discovery.title = payload.title
     discovery.category = payload.category
     discovery.summary = payload.summary
     discovery.tags = payload.tags
     discovery.discovered_at = payload.discovered_at
     text = build_text(discovery)
-    discovery.embedding = embed(db, text, "RETRIEVAL_DOCUMENT")
+    discovery.embedding = embed(db, text, "RETRIEVAL_DOCUMENT", current_user)
     db.commit()
     db.refresh(discovery)
     return discovery
 
 @router.delete("/{discovery_id}", status_code=204)
-def delete_discovery(discovery_id: uuid.UUID, db: Annotated[Session, Depends(get_db)]):
-    discovery = db.get(Discovery, discovery_id)
-    if discovery is None:
-        raise HTTPException(status_code=404, detail="discovery not found")
+def delete_discovery(discovery_id: uuid.UUID, db: Annotated[Session, Depends(get_db)], current_user: CurrentUser = Depends(get_current_user)):
+    discovery = get_owned_discovery(db, discovery_id, current_user.user_id)
     db.delete(discovery)
     db.commit()

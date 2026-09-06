@@ -10,6 +10,7 @@ from app.enums import LlmCallKind
 from pydantic import ValidationError
 from logging import getLogger
 from fastapi import HTTPException
+from app.auth import CurrentUser
 from google.genai._gaos.lib.compat_errors import APIError as InteractionsAPIError
 # Interactions API の例外階層が公開されたか → 公開されていれば import を差し替え
 
@@ -17,7 +18,7 @@ client = genai.Client(api_key=settings.GEMINI_API_KEY)
 
 logger = getLogger(__name__)
 
-def answer_question(db: Session, question: str) -> AiResponse:
+def answer_question(db: Session, question: str, current_user: CurrentUser) -> AiResponse:
     """質問に対して、記録された発見だけを根拠に回答を生成する。
 
     ハルシネーション対策として、プロンプトでの指示に加えて2つの機構を持つ。
@@ -51,7 +52,7 @@ def answer_question(db: Session, question: str) -> AiResponse:
         HTTPException: 502 LLM呼び出しまたは出力検証に失敗した場合。
             上流の障害なので 200 で返さない（ログで検知できなくなるため）。
     """
-    result = search(db, question)
+    result = search(db, question, current_user)
     if not result:
         db.commit()
         return AiResponse(answer="該当する知識が見つかりませんでした", sources=[])
@@ -83,7 +84,11 @@ def answer_question(db: Session, question: str) -> AiResponse:
                 "schema": AnsweredQuestion.model_json_schema()
                 },
             )
-        db.add(LlmCall(kind=LlmCallKind.ASK))
+        db.add(LlmCall(
+            kind=LlmCallKind.ASK,
+            user_id=current_user.user_id,
+            is_trial=current_user.is_trial,
+        ))
         ai_answer = AnsweredQuestion.model_validate_json(interaction.output_text)
     except ValidationError as e:
         logger.warning("検証失敗、プロンプト調節を検討: %s", e)
@@ -104,15 +109,3 @@ def answer_question(db: Session, question: str) -> AiResponse:
         return AiResponse(answer="根拠のある回答が得られませんでした", sources=[])
     db.commit()
     return AiResponse(answer=ai_answer.answer, sources=sources)
-
-if __name__ == "__main__":
-    from app.db import SessionLocal
-
-    db = SessionLocal()
-    try:
-        res = answer_question(db, "料理について何を学んだか教えて")
-        print(res.answer)
-        for s in res.sources:
-            print(s.title)
-    finally:
-        db.close()

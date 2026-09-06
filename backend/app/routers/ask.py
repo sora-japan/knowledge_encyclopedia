@@ -1,11 +1,11 @@
 from app.schemas import AiResponse, AskRequest 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from app.db import get_db
 from sqlalchemy.orm import Session
 from app.services.rag.qa import answer_question
-from app.services.usage import count_today
+from app.services.usage import check_limit
 from app.enums import LlmCallKind
-from app.config import settings
+from app.auth import get_current_user, CurrentUser
 
 router = APIRouter(
     prefix = "/api/ask",
@@ -13,8 +13,6 @@ router = APIRouter(
 )
 
 @router.post("", response_model=AiResponse, status_code=200)
-def ai_answer(payload: AskRequest, db: Session = Depends(get_db)):
-    count = count_today(db, LlmCallKind.ASK)
-    if count >= settings.DAILY_ASK_LIMIT:
-        raise HTTPException(status_code=429, detail="1日の使用上限に達しました")
-    return answer_question(db, payload.question)
+def ai_answer(payload: AskRequest, db: Session = Depends(get_db), current_user: CurrentUser = Depends(get_current_user)):
+    check_limit(db, LlmCallKind.ASK, current_user)
+    return answer_question(db, payload.question, current_user)

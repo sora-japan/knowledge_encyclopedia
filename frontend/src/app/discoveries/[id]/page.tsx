@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { DiscoveryNotFoundError, fetchDiscoveryById } from "@/lib/api";
+import { DiscoveryNotFoundError } from "@/lib/api";
+import { fetchDiscoveryById } from "@/lib/serverApi";
 import { DiscoveryResponse } from "@/lib/types";
 import { categoryStyle } from "@/lib/categoryStyle";
 import { browserApiPath } from "@/lib/apiUrl";
