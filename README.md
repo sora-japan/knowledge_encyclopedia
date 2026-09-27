@@ -10,9 +10,11 @@
 ## スクリーンショット 
 ### 図鑑一覧
 ![図鑑一覧](docs/screenshot/readme/list.png)
-### 登録前後の比較
+### 登録前後
 ![登録前後の比較](docs/screenshot/readme/register.png)
 ![登録前後の比較](docs/screenshot/readme/after_register.png)
+### 編集
+![登録前後の比較](docs/screenshot/readme/edit.png)
 ### 登録済みの知識に対する質問
 ![質問と出典](docs/screenshot/readme/questions.png)
 ![質問と出典](docs/screenshot/readme/questions2.png)
